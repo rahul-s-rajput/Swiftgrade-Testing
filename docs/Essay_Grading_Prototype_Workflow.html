@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Essay Grading Prototype: Workflow & Architecture</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111a2b;
+      --muted: #90a3b3;
+      --text: #e6eef7;
+      --accent: #7cc4ff;
+      --accent-2: #9dff9f;
+      --warn: #ffd88a;
+      --danger: #ff9ba1;
+      --ok: #a0ffcf;
+      --card: #0f1a2a;
+      --border: #26344a;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: linear-gradient(180deg, #0b1220, #0d1526);
+      color: var(--text);
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    header {
+      position: sticky; top: 0; z-index: 5;
+      backdrop-filter: blur(12px);
+      background: rgba(10,17,30,.7);
+      border-bottom: 1px solid var(--border);
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; }
+    .brand .dot { width: 10px; height: 10px; border-radius: 999px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 0 24px rgba(124,196,255,.45); }
+    nav { display: flex; flex-wrap: wrap; gap: 10px 16px; font-size: 14px; }
+    .section { margin: 32px 0; padding: 24px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+    h1 { font-size: 28px; margin: 8px 0 4px; }
+    h2 { font-size: 22px; margin: 0 0 12px; }
+    h3 { font-size: 16px; margin: 12px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+    p { color: #c8d5e3; line-height: 1.55; }
+    .muted { color: var(--muted); }
+
+    /* Steps grid */
+    .steps-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 16px; overflow: visible;
+    }
+    @media (max-width: 960px) { .steps-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .steps-grid { grid-template-columns: 1fr; } }
+    .step {
+      position: relative; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; transition: transform .2s ease, box-shadow .2s ease; cursor: default; overflow: visible; z-index: 0;
+    }
+    .step:hover { transform: translateY(-2px); box-shadow: 0 14px 30px rgba(0,0,0,.35); z-index: 5; }
+    .step .num { width: 28px; height: 28px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; color: #0b1220; background: linear-gradient(135deg, var(--accent), var(--accent-2)); box-shadow: 0 0 12px rgba(124,196,255,.45); margin-right: 8px; }
+
+    /* Tooltip */
+    .tip { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
+    .tip .tiptext {
+      visibility: hidden; opacity: 0; transition: opacity .15s ease, transform .15s ease;
+      position: absolute; z-index: 9999; min-width: 260px; max-width: 380px; padding: 12px 14px;
+      background: #0e1626; color: var(--text); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow);
+      top: calc(100% + 8px); left: 0; transform: translateY(-4px);
+    }
+    .tip:hover .tiptext { visibility: visible; opacity: 1; transform: translateY(0); }
+
+    /* Architecture grid */
+    .arch-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 16px; }
+    @media (max-width: 1200px) { .arch-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 900px) { .arch-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 580px) { .arch-grid { grid-template-columns: 1fr; } }
+    .card { padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+    .badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+    .list { margin: 8px 0 0 16px; color: #c8d5e3; }
+    .kv { display: grid; grid-template-columns: 160px 1fr; gap: 8px 12px; }
+    code, .code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; color: #d3e3ff; }
+
+    /* Details */
+    details { background: #0f1a2a; border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; margin-top: 10px; }
+    details > summary { cursor: pointer; font-weight: 600; }
+    details[open] { box-shadow: var(--shadow); }
+
+    .status { display: inline-flex; align-items: center; gap: 8px; }
+    .dot-ok { width: 8px; height: 8px; border-radius: 9999px; background: var(--ok); box-shadow: 0 0 12px rgba(160,255,207,.6); }
+    .dot-warn { width: 8px; height: 8px; border-radius: 9999px; background: var(--warn); box-shadow: 0 0 12px rgba(255,216,138,.6); }
+    .dot-danger { width: 8px; height: 8px; border-radius: 9999px; background: var(--danger); box-shadow: 0 0 12px rgba(255,155,161,.6); }
+
+    .note { font-size: 13px; color: var(--muted); }
+    footer { margin: 40px 0; color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container topbar">
+      <div class="brand"><span class="dot"></span> Essay Grading Prototype</div>
+      <nav>
+        <a href="#prototype">Prototype</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#endpoints">Endpoints</a>
+        <a href="#data-models">Data Models</a>
+        <a href="#error-handling">Error Handling</a>
+        <a href="#observability">Observability</a>
+        <a href="#quickstart">Quick Start</a>
+        <a href="#setup">Setup</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="section">
+      <h1>Workflow & Architecture Overview</h1>
+      <p class="muted">This document explains the prototype workflow and architecture for AI essay grading in clear, practical steps. Hover over underlined terms to see tooltips.</p>
+      <p class="note">Prototype focus: single student, async OpenRouter calls with bounded parallelism, Supabase (Storage + Postgres) for images and data. No background workers.</p>
+      <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+        <span class="badge">Prototype</span>
+        <span class="badge">Single Student</span>
+        <span class="badge">Supabase Selected</span>
+        <span class="badge">Async (bounded 10)</span>
+      </div>
+    </section>
+
+    <section class="section" id="quickstart">
+      <h2>Quick Start (Supabase)</h2>
+      <ol class="list">
+        <li><strong>Create Supabase project</strong> → get Project URL, anon key, and service role key.</li>
+        <li><strong>Create Storage bucket</strong> “grading” (Public for prototype) → upload test images.</li>
+        <li><strong>Create tables</strong>: Session, Image, Question, Result, Stats (see Data Models).</li>
+        <li><strong>Frontend</strong>: use anon key to upload or paste public image URLs → call <span class="code">/images/register</span>.</li>
+        <li><strong>Configure questions</strong> and <span class="code">low_score_question_ids</span> → call <span class="code">/questions/config</span>.</li>
+        <li><strong>Grade</strong>: call <span class="code">/grade/single</span> → read <span class="code">/results/{session_id}</span> and <span class="code">/stats/{session_id}</span>.</li>
+      </ol>
+      <p class="note">Ensure image URLs are public so OpenRouter can fetch them. Use RLS + signed reads later.</p>
+    </section>
+
+    <section class="section" id="prototype">
+      <h2>Prototype (Simplified Single-Student Flow)</h2>
+      <div class="steps-grid">
+        <div class="step">
+          <div><span class="num">1</span><strong>Upload Images</strong></div>
+          <p>Upload student paper images and answer-key images. Store resulting <span class="tip">image URLs<span class="tiptext">Use Supabase Storage (public bucket for prototype); URLs must be fetchable by the model.</span></span> in the DB.</p>
+        </div>
+        <div class="step">
+          <div><span class="num">2</span><strong>Enter Question Config</strong></div>
+          <p>Provide list of { question_id, number, max_marks } and a list of <span class="tip">low-score question IDs<span class="tiptext">IDs where humans did not award full marks (100%); used later for stats/highlights.</span></span>.</p>
+        </div>
+        <div class="step">
+          <div><span class="num">3</span><strong>Prepare Prompt</strong></div>
+          <p>Build a consistent prompt (system + user with image URLs + question metadata). Select <em>LLM models</em> and <em>tries per model</em> for this session.</p>
+        </div>
+        <div class="step">
+          <div><span class="num">4</span><strong>Call OpenRouter</strong></div>
+          <p>Perform up to K parallel requests (async) with a concurrency limit (e.g., 10). Total requests = models × tries. Use backoff on 429/5xx.</p>
+        </div>
+        <div class="step">
+          <div><span class="num">5</span><strong>Store & Parse</strong></div>
+          <p>Save raw outputs, parse into structured results (with model + try), and persist to Supabase Postgres.</p>
+        </div>
+        <div class="step">
+          <div><span class="num">6</span><strong>Results & Stats</strong></div>
+          <p>For each question: group responses by model → tries. Compute discrepancies vs key and highlight low-score IDs.</p>
+        </div>
+      </div>
+    </section>
+
+    
+
+    <section class="section" id="architecture">
+      <h2>Architecture (Prototype)</h2>
+      <p class="muted">Prototype mode: async flow with bounded concurrency, no background workers, persistence in Supabase Postgres. Focus on AI request/response.</p>
+      <div class="arch-grid">
+        <div class="card">
+          <div class="badge">Frontend</div>
+          <h3>React (TypeScript)</h3>
+          <p>Guided prototype flow, file uploads, config, progress, results, stats.</p>
+          <ul class="list">
+            <li><span class="tip">State mgmt<span class="tiptext">React Query for server state; minimal local UI state.</span></span></li>
+            <li><span class="tip">Uploads<span class="tiptext">Direct to object storage with signed URLs or via API.</span></span></li>
+            <li><span class="tip">Results UX<span class="tiptext">Per-student panels with discrepancy highlights and raw output.</span></span></li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="badge">API</div>
+          <h3>FastAPI</h3>
+          <p>Receives uploads/config, performs an async grade call with bounded concurrency, and returns results.</p>
+          <ul class="list">
+            <li><span class="tip">Validation<span class="tiptext">Pydantic schemas for incoming/outgoing payloads.</span></span></li>
+            <li><span class="tip">Simple retries<span class="tiptext">On 429/5xx with exponential backoff and jitter.</span></span></li>
+            <li><span class="tip">Models × tries<span class="tiptext">Loop asynchronously with a concurrency cap over selected models and their try counts; store (model, try_index) with each result.</span></span></li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="badge">Flow</div>
+          <h3>Async Grading</h3>
+          <p>No background jobs. Async with bounded parallelism over models × tries (e.g., 10).</p>
+          <ul class="list">
+            <li><span class="tip">Single student<span class="tiptext">Prototype is scoped to one student per run.</span></span></li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="badge">DB</div>
+          <h3>Supabase Postgres</h3>
+          <p>Tables: Session, Image, Question, Result, Stats.</p>
+          <ul class="list">
+            <li><span class="tip">Managed<span class="tiptext">Hosted Postgres with RLS and SDKs; suitable for prototype and beyond.</span></span></li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="badge">Storage</div>
+          <h3>Supabase Storage</h3>
+          <p>Bucket "grading" (Public for prototype) for images and raw outputs.</p>
+          <ul class="list">
+            <li><span class="tip">Public or signed reads<span class="tiptext">Use public URLs now; add RLS + signed reads later.</span></span></li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="badge">LLM</div>
+          <h3>OpenRouter</h3>
+          <p>Async calls with bounded parallelism over selected models and their try counts.</p>
+          <ul class="list">
+            <li><span class="tip">Prompting<span class="tiptext">System + user messages; image URLs; strict schema instructions.</span></span></li>
+            <li><span class="tip">Backoff<span class="tiptext">Handle 429/5xx/network with bounded retries and jitter.</span></span></li>
+            <li><span class="tip">Multi-model × tries<span class="tiptext">User selects multiple models and a tries count per model; total requests = Σ tries across models.</span></span></li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="badge">Ops</div>
+          <h3>Observability</h3>
+          <p>JSON logs, metrics, tracing.</p>
+          <ul class="list">
+            <li><span class="tip">Logs<span class="tiptext">Include session_id, model, retry_count, token_estimate, latency, error_code.</span></span></li>
+            <li><span class="tip">Metrics<span class="tiptext">Requests, tokens, success/fail, retries, parse errors.</span></span></li>
+          </ul>
+        </div>
+      </div>
+      <details>
+        <summary>Data flow (high level)</summary>
+        <ol class="list">
+          <li>React uploads images → Supabase Storage (public bucket) and registers URLs via FastAPI.</li>
+          <li>User submits question config and low_score_question_ids (not full marks = 100%).</li>
+          <li>FastAPI dispatches async requests with a concurrency cap (e.g., 10) over selected models × tries using a consistent prompt.</li>
+          <li>API stores raw outputs, parses structured results (model + try), computes per-model/try stats into Supabase Postgres.</li>
+          <li>React reads results and stats to render the UI.</li>
+        </ol>
+      </details>
+
+      <details>
+        <summary>Async vs Sync (brief)</summary>
+        <ul class="list">
+          <li><strong>Throughput</strong>: Async with bounded parallelism speeds up multi-model × tries by overlapping I/O.</li>
+          <li><strong>Reliability</strong>: Retries/backoff per request reduce tail failures; concurrency cap avoids provider limits.</li>
+          <li><strong>Complexity</strong>: Slightly higher than sync due to task orchestration and error fan-in.</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>SQL schema (Supabase Postgres)</summary>
+<pre class="code">-- Session
+create table if not exists session (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now()
+);
+
+-- Image
+create table if not exists image (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references session(id) on delete cascade,
+  kind text not null check (kind in ('student','answer_key')),
+  url text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_image_session on image(session_id);
+
+-- Question
+create table if not exists question (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references session(id) on delete cascade,
+  question_id text not null,
+  number int not null,
+  max_marks int not null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists uq_question_session_qid on question(session_id, question_id);
+
+-- Result
+create table if not exists result (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references session(id) on delete cascade,
+  question_id text not null,
+  model_name text not null,
+  try_index int not null check (try_index > 0),
+  marks_awarded numeric not null,
+  rubric_notes text,
+  raw_output_url text,
+  validation_errors jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_result_session_q on result(session_id, question_id);
+create index if not exists idx_result_model_try on result(session_id, model_name, try_index);
+
+-- Stats
+create table if not exists stats (
+  session_id uuid primary key references session(id) on delete cascade,
+  low_score_question_ids jsonb not null default '[]'::jsonb,
+  low_score_hits_count int not null default 0,
+  total_marks_awarded numeric not null default 0,
+  total_max_marks numeric not null default 0,
+  discrepancies_by_model_try jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+</pre>
+      </details>
+
+      <details>
+        <summary>Pseudocode (Backend, async with bounded parallelism)</summary>
+<pre class="code"># Python-like pseudocode
+MAX_CONCURRENCY = 10
+
+async def grade_single(session_id, models):
+    # models = [{"name": str, "tries": int}, ...]
+    prompt = build_prompt_for_session(session_id)
+    sem = asyncio.Semaphore(MAX_CONCURRENCY)
+    tasks = []
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        for m in models:
+            for t in range(1, m["tries"] + 1):
+                tasks.append(run_try(client, sem, prompt, m["name"], t))
+
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # persist results (model_name, try_index, ...) and compute stats
+    save_results(session_id, responses)
+    recompute_stats(session_id)
+    return ok
+
+async def run_try(client, sem, prompt, model_name, try_index):
+    async with sem:
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                r = await client.post(openrouter_url(model_name), json=prompt)
+                if r.status_code in (429, 500, 502, 503):
+                    await asyncio.sleep(backoff(attempt))
+                    continue
+                data = r.json()
+                return parse_llm_output(model_name, try_index, data)
+            except Exception:
+                await asyncio.sleep(backoff(attempt))
+        return error_result(model_name, try_index)
+</pre>
+      </details>
+
+      <details>
+        <summary>Implementation Plan (Design)</summary>
+        <ol class="list">
+          <li><strong>Supabase setup</strong>: Create project, Storage bucket "grading" (public), get anon/service keys.</li>
+          <li><strong>Schema</strong>: Apply SQL DDL (Session, Image, Question, Result with model_name/try_index, Stats with discrepancies_by_model_try).</li>
+          <li><strong>Backend wiring</strong>: FastAPI + Supabase client (service role). Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OPENROUTER_API_KEY.</li>
+          <li><strong>Endpoints</strong>: 
+            - POST /images/register
+            - POST /questions/config
+            - POST /grade/single (async models × tries with MAX_CONCURRENCY)
+            - GET /results/{session_id}, GET /stats/{session_id}
+          </li>
+          <li><strong>Pseudocode → code</strong>: Implement async grading using httpx.AsyncClient + asyncio.Semaphore, parse and persist results.</li>
+          <li><strong>Frontend</strong>: Model multiselect + tries, uploads to Supabase, results grouped by model→tries, stats table (model | try1..tryN | avg).</li>
+          <li><strong>Observability</strong>: JSON logs: session_id, model, try_index, latency, error_code; basic error surfaces.</li>
+        </ol>
+      </details>
+    </section>
+
+    
+
+    <section class="section" id="endpoints">
+      <h2>Backend Endpoints</h2>
+      <div class="kv">
+        <div>POST <span class="code">/images/signed-url</span></div><div>(Optional) Issue direct-upload URL (PUT) + headers</div>
+        <div>POST <span class="code">/images/register</span></div><div>Register uploaded file with role=<em>student|answer_key</em> and persist URL</div>
+        <div>POST <span class="code">/questions/config</span></div><div>Submit [{ question_id, number, max_marks }] and low_score_question_ids[]</div>
+        <div>POST <span class="code">/grade/single</span></div><div>Async calls with bounded concurrency over models × tries using stored URLs and question config; returns results</div>
+        <div>GET  <span class="code">/results/{session_id}</span></div><div>Fetch parsed results (if not returned inline)</div>
+        <div>GET  <span class="code">/stats/{session_id}</span></div><div>Simple stats using low_score_question_ids and model outputs</div>
+      </div>
+      <details>
+        <summary>Examples</summary>
+        <div style="margin-top:8px">
+<pre class="code">POST /images/register
+{
+  "session_id": "abc123",
+  "role": "student",
+  "url": "https://YOUR-PROJECT.supabase.co/storage/v1/object/public/grading/student-1.png",
+  "order_index": 0
+}
+</pre>
+<pre class="code">POST /questions/config
+{
+  "session_id": "abc123",
+  "questions": [
+    { "question_id": "Q1", "number": 1, "max_marks": 10 },
+    { "question_id": "Q2", "number": 2, "max_marks": 5 }
+  ],
+  "low_score_question_ids": ["Q2"]
+}
+</pre>
+<pre class="code">POST /grade/single
+{
+  "session_id": "abc123",
+  "models": [
+    { "name": "model-1", "tries": 3 },
+    { "name": "model-2", "tries": 2 }
+  ]
+}
+</pre>
+<pre class="code">GET /results/abc123
+{
+  "session_id": "abc123",
+  "results_by_question": {
+    "Q1": {
+      "model-1": [
+        { "try_index": 1, "marks_awarded": 9,  "rubric_notes": "Good" },
+        { "try_index": 2, "marks_awarded": 10, "rubric_notes": "Excellent" }
+      ],
+      "model-2": [
+        { "try_index": 1, "marks_awarded": 8,  "rubric_notes": "Okay" }
+      ]
+    },
+    "Q2": {
+      "model-1": [
+        { "try_index": 1, "marks_awarded": 5, "rubric_notes": "Partial" }
+      ]
+    }
+  }
+}
+</pre>
+<pre class="code">GET /stats/abc123
+{
+  "session_id": "abc123",
+  "low_score_hits_count": 1,
+  "total_marks_awarded": 14,
+  "total_max_marks": 15,
+  "discrepancies_by_model_try": {
+    "model-1": { "tries": [2, 1, 0], "avg": 1.0 },
+    "model-2": { "tries": [1, 1], "avg": 1.0 }
+  }
+}
+</pre>
+        </div>
+      </details>
+      <details>
+        <summary>Optional: signed URL workflow</summary>
+        <p>Clients upload directly to storage using provided signed URLs to avoid proxying large files through the API. Store and reference the resulting public or signed-read URLs in prompts.</p>
+      </details>
+      <details>
+        <summary>Prototype states</summary>
+        <p>Session: created → graded | failed. No batching or background processing.</p>
+      </details>
+    </section>
+
+    <section class="section" id="data-models">
+      <h2>Data Models (Prototype)</h2>
+      <div class="arch-grid">
+        <div class="card">
+          <h3>Session</h3>
+          <ul class="list">
+            <li>id, status (created|graded|failed), created_at, updated_at</li>
+            <li>model (string), latency_ms, error_code (nullable)</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Image</h3>
+          <ul class="list">
+            <li>id, session_id, role (student|answer_key)</li>
+            <li>url, order_index</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Question</h3>
+          <ul class="list">
+            <li>id, session_id</li>
+            <li>question_id (external), number, max_marks</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Result</h3>
+          <ul class="list">
+            <li>id, session_id, question_id</li>
+            <li>model_name, try_index</li>
+            <li>marks_awarded, rubric_notes, raw_output_url, validation_errors</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Stats</h3>
+          <ul class="list">
+            <li>session_id, low_score_question_ids (json)</li>
+            <li>low_score_hits_count, total_marks_awarded, total_max_marks</li>
+            <li>discrepancies_by_model_try (json) → { [model_name]: { tries: number[], avg: number } }</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="error-handling">
+      <h2>Error Handling (Prototype)</h2>
+      <div class="arch-grid">
+        <div class="card">
+          <h3>Rate Limiting</h3>
+          <ul class="list">
+            <li>No preflight. On 429, simple exponential backoff with jitter (few tries).</li>
+            <li>Keep total wait bounded; surface error if exhausted.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Retries</h3>
+          <ul class="list">
+            <li>Transient (429/5xx/network): retry with backoff (e.g., 3 tries).</li>
+            <li>Parsing invalid: 1 guided retry with stricter instructions (optional).</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Idempotency</h3>
+          <ul class="list">
+            <li>Not implemented for prototype; each run creates a new session.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Partial Success</h3>
+          <ul class="list">
+            <li>Not applicable; single-student prototype run.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="observability">
+      <h2>Observability</h2>
+      <div class="arch-grid">
+        <div class="card">
+          <h3>Structured Logs</h3>
+          <ul class="list">
+            <li>{ process_id, batch_id, model, try, rl_state, retry_count, token_estimate, latency_ms, error_code }</li>
+            <li>Redact PII; env-based secrets</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Metrics</h3>
+          <ul class="list">
+            <li>Requests, tokens in/out, success/fail, RL hits, retries</li>
+            <li>Parse errors, latency histograms, cost estimates</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Tracing</h3>
+          <ul class="list">
+            <li>Span per batch; link to model call</li>
+            <li>Context propagation to logs</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="setup">
+      <h2>Prototype Creation Plan (How it will be built)</h2>
+      <ol class="list">
+        <li><strong>Scaffold FastAPI</strong>: endpoints in this doc; Pydantic models; JSON logging.</li>
+        <li><strong>Set up Supabase</strong>: Storage bucket "grading" (Public for prototype), get anon + service keys.</li>
+        <li><strong>Define Supabase schema</strong>: Session, Image(role, url, order_index), Question, Result, Stats.</li>
+        <li><strong>Implement OpenRouter call</strong>: async with bounded parallelism (e.g., 10), with retries/backoff.</li>
+        <li><strong>Parsing + persistence</strong>: save raw output, parse to structured results, compute stats.</li>
+        <li><strong>UI</strong>: simple forms for image URLs and question config; results + stats views.</li>
+        <li><strong>Minimal observability</strong>: JSON logs with session_id, latency, error_code.</li>
+      </ol>
+      <details>
+        <summary>Milestones & Status</summary>
+        <ul class="list">
+          <li><span class="status"><span class="dot-ok"></span>Prototype design finalized</span></li>
+          <li><span class="status"><span class="dot-warn"></span>Scaffolding in progress</span></li>
+          <li><span class="status"><span class="dot-warn"></span>OpenRouter integration pending</span></li>
+          <li><span class="status"><span class="dot-warn"></span>UI results/statistics pending</span></li>
+        </ul>
+      </details>
+    </section>
+
+    <footer>
+      Updated: <span id="updated"></span>
+    </footer>
+  </main>
+
+  <script>
+    // Set updated timestamp using user's local time
+    (function() {
+      var el = document.getElementById('updated');
+      try {
+        var d = new Date();
+        el.textContent = d.toLocaleString();
+      } catch (e) { el.textContent = '—'; }
+    })();
+  </script>
+</body>
+</html>

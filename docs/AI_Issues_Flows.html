@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QBQ AI – Three Critical Flow Issues (Visual)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #111827;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #60a5fa;
+      --warn: #fbbf24;
+      --error: #f87171;
+      --ok: #34d399;
+      --line: #94a3b8;
+    }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    .container { max-width: 1100px; margin: 40px auto; padding: 0 16px; }
+    h1 { font-size: 28px; margin: 0 0 8px; }
+    p.caption { color: var(--muted); margin-top: 4px; }
+    section { background: var(--card); border: 1px solid #1f2937; border-radius: 12px; padding: 18px; margin: 22px 0; }
+    h2 { margin-top: 0; font-size: 22px; }
+    .meta { color: var(--muted); font-size: 14px; margin-top: 6px; }
+    ul { margin: 8px 0 0 18px; }
+    code { background: #0b1220; padding: 2px 6px; border-radius: 6px; color: #dbeafe; }
+    .hint { color: var(--muted); font-size: 14px; }
+    .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 8px 0 0; }
+    .pill { padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid #334155; color: var(--muted); }
+    .pill.ok { color: var(--ok); border-color: var(--ok); }
+    .pill.warn { color: var(--warn); border-color: var(--warn); }
+    .pill.err { color: var(--error); border-color: var(--error); }
+    .flow { width: 100%; overflow-x: auto; background: #0b1220; border-radius: 10px; border: 1px solid #1f2937; padding: 8px; }
+    svg { width: 100%; height: auto; }
+    .footnote { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>QBQ AI – Three Critical Flow Issues (Visual)</h1>
+    
+    <!-- ISSUE 1 -->
+    <section>
+      <h2>1) Rate-limit exception still advances the chain (preprocess → process)</h2>
+      <div class="meta">Code refs: <code>image_prompt_service.py</code> uses <code>chain(preprocess_batch.si(...), process_batch.si(...))</code>. In <code>process_image_prompt_batch_task.py::preprocess_batch()</code> the exception path does <code>app.control.revoke(self.request.id)</code> then <code>return</code>.</div>
+      <ul>
+        <li><b>What happens:</b> On certain rate-limit/lock exceptions, the task <i>returns normally</i>. In a Celery <code>chain</code>, a normal return is treated as success.</li>
+        <li><b>Why it matters:</b> The next task <code>process_batch</code> still runs, potentially calling the LLM when we intended to block.</li>
+        <li><b>Key detail:</b> Immutable signatures <code>.si(...)</code> don’t let the next task inspect prior results; return vs. raise is crucial.</li>
+      </ul>
+      <div class="legend">
+        <span class="pill ok">Normal retry path</span>
+        <span class="pill.warn">Exception path</span>
+        <span class="pill.err">Unexpected consequence</span>
+      </div>
+      <div class="flow">
+        <svg viewBox="0 0 1100 240" xmlns="http://www.w3.org/2000/svg">
+          <!-- Nodes -->
+          <rect x="20" y="20" width="240" height="56" rx="10" fill="#1f2937" stroke="#94a3b8" />
+          <text x="140" y="52" text-anchor="middle" fill="#e5e7eb" font-size="14">preprocess_batch</text>
+
+          <rect x="320" y="20" width="240" height="56" rx="10" fill="#1f2937" stroke="#34d399" />
+          <text x="440" y="47" text-anchor="middle" fill="#e5e7eb" font-size="13">can_run == False</text>
+          <text x="440" y="65" text-anchor="middle" fill="#34d399" font-size="12">raise self.retry()</text>
+
+          <rect x="320" y="120" width="240" height="56" rx="10" fill="#1f2937" stroke="#fbbf24" />
+          <text x="440" y="147" text-anchor="middle" fill="#e5e7eb" font-size="13">Rate-limit/lock exception</text>
+          <text x="440" y="165" text-anchor="middle" fill="#fbbf24" font-size="12">revoke + return</text>
+
+          <rect x="640" y="120" width="260" height="56" rx="10" fill="#1f2937" stroke="#f87171" />
+          <text x="770" y="147" text-anchor="middle" fill="#e5e7eb" font-size="13">chain advances as success</text>
+          <text x="770" y="165" text-anchor="middle" fill="#f87171" font-size="12">process_batch runs</text>
+
+          <!-- Arrows -->
+          <defs>
+            <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L0,6 L9,3 z" fill="#94a3b8" />
+            </marker>
+          </defs>
+          <line x1="260" y1="48" x2="320" y2="48" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+          <line x1="260" y1="48" x2="320" y2="148" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+          <line x1="560" y1="148" x2="640" y2="148" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+        </svg>
+      </div>
+      <p class="footnote">Expected fix concept: raise to abort chain on exception (e.g., <code>celery.exceptions.Ignore</code>) rather than <code>return</code>.</p>
+    </section>
+
+    <!-- ISSUE 2 -->
+    <section>
+      <h2>2) Duplicate writes (at-least-once delivery + unconditional updates)</h2>
+      <div class="meta">Code refs: writes in <code>process_image_prompt_batch_task.py::process_gpt_response()</code> call <code>update_completed_prompt()</code> / <code>update_failed_prompt()</code> without idempotency or terminal-state checks.</div>
+      <ul>
+        <li><b>What happens:</b> The worker may finish the LLM call and write COMPLETED, then crash before acking → broker redelivers → task runs again → writes again.</li>
+        <li><b>Why it matters:</b> A late failure can overwrite a real success, or the same data is written twice. Aggregations and final status can become inconsistent.</li>
+        <li><b>Key detail:</b> Celery is at-least-once. Without idempotency or terminal-state rules, duplicates and late overwrites are possible.</li>
+      </ul>
+      <div class="legend">
+        <span class="pill ok">First run (success)</span>
+        <span class="pill.warn">Redelivery</span>
+        <span class="pill.err">Late overwrite risk</span>
+      </div>
+      <div class="flow">
+        <svg viewBox="0 0 1100 280" xmlns="http://www.w3.org/2000/svg">
+          <!-- Row 1 -->
+          <rect x="20" y="20" width="260" height="56" rx="10" fill="#1f2937" stroke="#34d399" />
+          <text x="150" y="47" text-anchor="middle" fill="#e5e7eb" font-size="13">process_gpt_response()</text>
+          <text x="150" y="65" text-anchor="middle" fill="#34d399" font-size="12">LLM success</text>
+
+          <rect x="320" y="20" width="260" height="56" rx="10" fill="#1f2937" stroke="#34d399" />
+          <text x="450" y="47" text-anchor="middle" fill="#e5e7eb" font-size="13">DB: status=COMPLETED</text>
+
+          <rect x="620" y="20" width="260" height="56" rx="10" fill="#1f2937" stroke="#fbbf24" />
+          <text x="750" y="47" text-anchor="middle" fill="#e5e7eb" font-size="13">Crash/timeout before ack</text>
+
+          <!-- Row 2 -->
+          <rect x="20" y="140" width="260" height="56" rx="10" fill="#1f2937" stroke="#fbbf24" />
+          <text x="150" y="167" text-anchor="middle" fill="#e5e7eb" font-size="13">Redelivery</text>
+
+          <rect x="320" y="140" width="260" height="56" rx="10" fill="#1f2937" stroke="#94a3b8" />
+          <text x="450" y="167" text-anchor="middle" fill="#e5e7eb" font-size="13">Second run</text>
+          <text x="450" y="185" text-anchor="middle" fill="#e5e7eb" font-size="12">(success or failure)</text>
+
+          <rect x="620" y="140" width="260" height="56" rx="10" fill="#1f2937" stroke="#f87171" />
+          <text x="750" y="167" text-anchor="middle" fill="#e5e7eb" font-size="13">DB overwritten</text>
+          <text x="750" y="185" text-anchor="middle" fill="#f87171" font-size="12">late FAILED over COMPLETED</text>
+
+          <!-- Arrows -->
+          <defs>
+            <marker id="arrow2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L0,6 L9,3 z" fill="#94a3b8" />
+            </marker>
+          </defs>
+          <line x1="280" y1="48" x2="320" y2="48" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow2)" />
+          <line x1="580" y1="48" x2="620" y2="48" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow2)" />
+
+          <line x1="150" y1="76" x2="150" y2="140" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow2)" />
+          <line x1="280" y1="168" x2="320" y2="168" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow2)" />
+          <line x1="580" y1="168" x2="620" y2="168" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow2)" />
+        </svg>
+      </div>
+      <p class="footnote">Without an idempotency key and terminal-state rules (ignore writes after COMPLETED), late overwrites can distort final results and downstream reporting.</p>
+    </section>
+
+    <!-- ISSUE 3 -->
+    <section>
+      <h2>3) Partial success policy (“any success == completed”)</h2>
+      <div class="meta">Code refs: <code>external_assessment_grading_results_service.py::call()</code> completes when at least one batch parses; only 0 parsed batches leads to FAILED.</div>
+      <ul>
+        <li><b>What happens:</b> If at least one batch parses, the whole assessment is marked COMPLETED and sent to API.</li>
+        <li><b>Why it matters:</b> Stakeholders may assume all students were graded; remaining batches are silently missing.</li>
+        <li><b>Alternative:</b> Require a threshold (e.g., ≥80% parsed) or return a PARTIAL status with a failure summary.</li>
+      </ul>
+      <div class="legend">
+        <span class="pill ok">Parsed batch</span>
+        <span class="pill.err">Unparsed batch</span>
+        <span class="pill warn">Overall marked COMPLETED</span>
+      </div>
+      <div class="flow">
+        <svg viewBox="0 0 1100 260" xmlns="http://www.w3.org/2000/svg">
+          <!-- Batches row -->
+          <rect x="20" y="20" width="120" height="50" rx="8" fill="#1f2937" stroke="#34d399" />
+          <text x="80" y="50" text-anchor="middle" fill="#e5e7eb" font-size="12">Batch 1 ✓</text>
+
+          <rect x="160" y="20" width="120" height="50" rx="8" fill="#1f2937" stroke="#f87171" />
+          <text x="220" y="50" text-anchor="middle" fill="#e5e7eb" font-size="12">Batch 2 ✗</text>
+
+          <rect x="300" y="20" width="120" height="50" rx="8" fill="#1f2937" stroke="#f87171" />
+          <text x="360" y="50" text-anchor="middle" fill="#e5e7eb" font-size="12">Batch 3 ✗</text>
+
+          <rect x="440" y="20" width="120" height="50" rx="8" fill="#1f2937" stroke="#f87171" />
+          <text x="500" y="50" text-anchor="middle" fill="#e5e7eb" font-size="12">Batch 4 ✗</text>
+
+          <rect x="580" y="20" width="120" height="50" rx="8" fill="#1f2937" stroke="#f87171" />
+          <text x="640" y="50" text-anchor="middle" fill="#e5e7eb" font-size="12">Batch 5 ✗</text>
+
+          <!-- Decision box -->
+          <rect x="20" y="110" width="320" height="56" rx="10" fill="#1f2937" stroke="#94a3b8" />
+          <text x="180" y="138" text-anchor="middle" fill="#e5e7eb" font-size="13">Any parsed batches?</text>
+
+          <rect x="380" y="110" width="320" height="56" rx="10" fill="#1f2937" stroke="#fbbf24" />
+          <text x="540" y="138" text-anchor="middle" fill="#fbbf24" font-size="13">YES → mark COMPLETED</text>
+
+          <rect x="20" y="190" width="320" height="56" rx="10" fill="#1f2937" stroke="#f87171" />
+          <text x="180" y="218" text-anchor="middle" fill="#f87171" font-size="13">NO → mark FAILED</text>
+
+          <!-- Arrows -->
+          <defs>
+            <marker id="arrow3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L0,6 L9,3 z" fill="#94a3b8" />
+            </marker>
+          </defs>
+          <line x1="80" y1="70" x2="180" y2="110" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow3)" />
+          <line x1="220" y1="70" x2="180" y2="110" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow3)" />
+          <line x1="360" y1="70" x2="180" y2="110" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow3)" />
+          <line x1="500" y1="70" x2="180" y2="110" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow3)" />
+          <line x1="640" y1="70" x2="180" y2="110" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow3)" />
+
+          <line x1="340" y1="138" x2="380" y2="138" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow3)" />
+          <line x1="180" y1="166" x2="180" y2="190" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow3)" />
+        </svg>
+      </div>
+      <p class="footnote">Current policy is “any success == overall success.” Consider threshold or PARTIAL status if completeness matters.</p>
+    </section>
+
+  </div>
+</body>
+</html>
