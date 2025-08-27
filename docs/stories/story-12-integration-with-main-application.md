@@ -1,33 +1,32 @@
 # Story 12: Integration with Main Application
 
 ## Context and Goals
-Expose a clean API from the picker for the parent assessment app to consume and integrate into the workflow.
+Integrate the existing `MultiSelect` into the assessment app pages using simple, controlled parent state. No custom wrapper component.
 
-- Source: User Stories (Story 12), Quick Start (Usage Example), Implementation Plan (Phases 5, Component Structure).
+- Source: This doc. Component: `src/components/MultiSelect.tsx`.
 
 ## Acceptance Criteria
-- [ ] Props interface for parent component.
-- [ ] Callback for selection changes and apply.
-- [ ] Controlled/uncontrolled modes.
-- [ ] Default selections support.
-- [ ] Disabled models option.
-- [ ] Custom styling props.
-- [ ] Event emissions for key actions.
+- [ ] Use `MultiSelect` with props:
+  - `label: string`
+  - `options: AIModel[]`
+  - `selectedValues: string[]`
+  - `onChange(values: string[]): void`
+  - `placeholder?: string`
+- [ ] Parent holds selections in state and passes to `MultiSelect`.
+- [ ] Default selections supported by initializing parent state.
 
 ## Implementation Plan
-- __Component__: `OpenRouterModelPicker.tsx`
-  - Props: `{ isOpen, onClose, onSelectionComplete(models), initialSelection?, className?, disabledModelIds? }`.
-  - Internal state from hooks; hydrate from `initialSelection`.
-  - Fire `onSelectionComplete` on Apply.
-  - Optional `onChange(selectedModels)` for live updates.
-- __Index__: `src/components/OpenRouterModelPicker/index.ts` to export.
-- __Example__: Add demo usage to `src/pages/NewAssessment.tsx` or a new demo page.
+- __Parent State__: In `src/pages/NewAssessment.tsx` (or similar), maintain:
+  - `const [selectedModels, setSelectedModels] = useState<string[]>(defaultIds)`
+  - `const options: AIModel[] = [...]` (mock list or pulled from context)
+- __Render__:
+  - `<MultiSelect label="Models" options={options} selectedValues={selectedModels} onChange={setSelectedModels} />`
+- __Reasoning__ (from Story 4): Optionally render inline reasoning controls per selected model below the chips, keyed by model id.
 
 ## Testing Scenarios
-- Controlled vs uncontrolled flows behave predictably.
-- Disabled ids cannot be selected.
-- Initial selections render correctly.
+- Initial selections render from the parent state initializer.
+- `onChange` updates parent state and chips reflect selection.
 
 ## Definition of Done
-- Parent app can open picker, select, and receive variants.
-- Types exported from `src/types/openrouter.ts`.
+- Parent app renders `MultiSelect` with mock options.
+- Selection changes flow through `onChange` without console errors.

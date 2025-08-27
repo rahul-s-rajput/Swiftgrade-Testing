@@ -1,29 +1,27 @@
 # Story 13: Unit Testing
 
 ## Context and Goals
-Establish solid test coverage for hooks and key UI behaviors.
+Add a minimal set of unit tests for the `MultiSelect` to ensure core prototype behaviors are stable.
 
-- Source: Technical Debt (Story 13), Implementation Plan (Testing Strategy).
+- Source: This doc. Component: `src/components/MultiSelect.tsx`.
 
 ## Acceptance Criteria
-- [ ] 80% code coverage.
-- [ ] Test all hooks.
-- [ ] Test filtering logic.
-- [ ] Test selection logic.
-- [ ] Test API integration with mocks.
-- [ ] Snapshot tests for UI.
+- [ ] Renders with label and a list of options.
+- [ ] Filters options by name/provider as user types.
+- [ ] Toggles selection and calls `onChange` with updated ids.
+- [ ] Displays selected chips and removes on X click.
 
 ## Implementation Plan
-- __Setup__: Ensure testing libs configured (Vitest + React Testing Library).
-- __Hook tests__: `useModelFetch`, `useModelFilter`, `useModelSelection`.
-- __Component tests__: ModelCard, ModelFilters, SelectedModelsList, OpenRouterModelPicker shell.
-- __Mocks__: Mock fetch for model list and localStorage for cache paths.
+- __Setup__: Vitest + React Testing Library.
+- __Tests__ (examples):
+  - Render component with two options; expect labels present.
+  - Type in search; expect filtering.
+  - Click an option; expect `onChange` called with that id.
+  - Click chip X; expect `onChange` called without that id.
+- Keep tests colocated near the component or in `src/__tests__/MultiSelect.test.tsx`.
 
 ## Testing Scenarios
-- Cache hit vs stale paths in `useModelFetch`.
-- Complex filter combinations.
-- Variant duplication prevention.
+- Basic behaviors only; no API, caching, or advanced keyboard.
 
 ## Definition of Done
-- CI passes with coverage threshold.
-- Tests document major behaviors and edge cases.
+- Tests run locally and pass; no console errors during test run.

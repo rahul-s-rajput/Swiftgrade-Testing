@@ -1,40 +1,32 @@
 # Story 4: Reasoning Configuration
 
 ## Context and Goals
-Enable users to configure reasoning levels per model, using presets and a custom option, applying only where supported.
+Enable users to set a simple reasoning level for each selected model using a lightweight inline control. No popovers/modals.
 
-- Source: User Stories (Story 4), Quick Start (Reasoning types and config), Implementation Plan (Reasoning Presets).
+- Source: This doc. Component: `src/components/MultiSelect.tsx` wrapped by a parent with extra UI.
 
 ## Acceptance Criteria
-- [ ] Preset options: None, Low, Medium, High, Custom.
-- [ ] Low = 20% of max_tokens for reasoning; Medium = 50%; High = 80% (use provider `max_completion_tokens` where available; otherwise omit token-based calculations and just set `effort`).
-- [ ] Custom allows manual token allocation.
-- [ ] Visual indicator shows reasoning level on cards/variants.
-- [ ] Reasoning only available for capable models (gate by available fields or capability flag if present).
-- [ ] Configuration saved per model variant.
+- [ ] For each selected model, show a small select: None, Low, Medium, High, Custom.
+- [ ] If Custom selected, show a numeric input for tokens (basic > 0 validation).
+- [ ] The chosen level is displayed adjacent to the chip (e.g., small badge or label rendered by the parent below the chips).
+- [ ] Reasoning config is stored in parent state keyed by model id: `{ [modelId]: { level: 'none'|'low'|'medium'|'high'|'custom', tokens?: number } }`.
 
 ## Implementation Plan
-- __Component__: `src/components/OpenRouterModelPicker/components/ReasoningSelector.tsx`
-  - Props: `model`, `onSelect(reasoningType, customMaxTokens?)`.
-  - Presets mapping to `ReasoningConfig`: none -> `{ include_reasoning: false }`; low/medium/high -> `{ effort: 'low'|'medium'|'high', include_reasoning: true }`; custom -> `{ max_tokens, include_reasoning: true }`.
-  - Compute percent-of-max helper using `model.top_provider?.max_completion_tokens` if present.
-- __Card__: Add "+ Add Variant" button to open selector and call `addModelVariant` with chosen config.
-- __Validation__: Hide/disable reasoning options if unsupported; show tooltip.
+- __Parent wrapper__: Under the `MultiSelect`, render a list of selected chips (already shown) and, for each, a small `<select>` and optional `<input type="number">` for custom.
+- __State__: `const [reasoningByModel, setReasoningByModel] = useState<Record<string, {level: string; tokens?: number}>>({});`
+- __Display__: Render a small badge/label next to each chip (in a separate line/row) showing the chosen level.
 
 ## Data Contracts
-- `ReasoningType = 'none' | 'low' | 'medium' | 'high' | 'custom'`.
-- `ReasoningConfig` as in Quick Start.
+- `ReasoningLevel = 'none' | 'low' | 'medium' | 'high' | 'custom'`.
+- `ReasoningByModel: Record<string, { level: ReasoningLevel; tokens?: number }>`.
 
 ## UX States
-- Modal/bottom sheet for selector with clear presets.
-- Badge on variant: e.g., "(medium reasoning)".
+- Simple inline controls; no popovers.
+- Small badge/label rendered adjacent to chips, e.g., "[Medium]".
 
-## Testing Scenarios
-- Preset selection generates correct config.
-- Custom token entry validated for numeric limits.
-- Unsupported models cannot select reasoning.
+## Prototype Notes
+- Keep validation minimal; no capability gating.
 
 ## Definition of Done
-- Selector integrated with cards and selection hook.
-- Variants reflect reasoning choice and display name includes level.
-- Validation and UX affordances in place.
+- Inline selectors appear for selected models.
+- Badges reflect reasoning levels.

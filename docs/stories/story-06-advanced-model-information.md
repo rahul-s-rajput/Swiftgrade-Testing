@@ -1,36 +1,25 @@
 # Story 6: Advanced Model Information
 
 ## Context and Goals
-Provide expandable details per model to inform selection decisions.
+For the prototype, keep each option minimal. Show only model name and provider in the list. No expand/collapse or deep details.
 
-- Source: User Stories (Story 6), Implementation Plan (Model Card Design), Quick Start types.
+- Source: This doc. Component: `src/components/MultiSelect.tsx`.
 
 ## Acceptance Criteria
-- [ ] Expandable details on model cards.
-- [ ] Show: description, architecture, tokenizer.
-- [ ] Display supported parameters (if provided by API).
-- [ ] Show provider information.
-- [ ] Link to model documentation (if link derivable or provided).
-- [ ] Visual badges for capabilities (vision, reasoning, modality) when detectable.
-- [ ] Pricing breakdown (per 1K/1M tokens) with formatter.
-- [ ] Last updated timestamp (from fetch time or API field if available).
+- [ ] Option displays `name` and a small `provider` subtitle.
+- [ ] No expandable sections, links, or badges.
 
 ## Implementation Plan
-- __Card__: Expand/collapse section.
-- __Utils__: `src/components/OpenRouterModelPicker/utils/modelUtils.ts` for provider extraction, capability badges, and safe pricing computations.
-- __Utils__: `pricingUtils.ts` to format `$ per 1K/1M tokens` from `pricing.prompt/completion`.
+- Use existing rendering in `MultiSelect` option rows.
 
 ## Data Contracts
-- Use `OpenRouterModel.architecture`, `supported_parameters?`, `top_provider` where available.
+- `AIModel` with `id`, `name`, `provider` only.
 
 ## UX States
-- Collapsed by default; remembers expand state in-session.
+- Clean, simple list; no expand/collapse.
 
-## Testing Scenarios
-- Models without optional fields render gracefully.
-- Pricing math verified.
-- External links open safely (new tab, rel noopener).
+## Prototype Notes
+- Defer rich details to future work.
 
 ## Definition of Done
-- Cards show rich details without layout regressions.
-- Utilities tested with representative model shapes.
+- List shows name + provider only, with no console warnings.

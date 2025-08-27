@@ -1,37 +1,27 @@
 # Story 5: Model Variants
 
 ## Context and Goals
-Allow creating multiple variants of the same base model with different reasoning settings and custom names, preventing duplicates.
+For the prototype, we will NOT support multiple variants per model. Selection is per-model only. Reasoning levels are handled inline as in Story 4.
 
-- Source: User Stories (Story 5), Quick Start (Variant generation), Implementation Plan (Variant creation).
+- Source: This doc. Component: `src/components/MultiSelect.tsx` with parent-held reasoning state.
 
 ## Acceptance Criteria
-- [ ] "Add Variant" button on each model card.
-- [ ] Variant creation modal with reasoning options.
-- [ ] Custom name for each variant.
-- [ ] Display format: `model-name (reasoning-level)`.
-- [ ] Variants shown in selected models list.
-- [ ] Each variant has unique ID.
-- [ ] Can delete individual variants.
-- [ ] Prevent duplicate variants for same base model + reasoning type.
+- [ ] User can select multiple models; each model appears once.
+- [ ] Reasoning is configured per selected model using Story 4's inline controls.
+- [ ] Chip shows model name and reasoning badge.
 
 ## Implementation Plan
-- __Hook__: Extend `useModelSelection` to generate `variantId = `${model.id}_${reasoningType}_${timestamp}`` and duplicate checks.
-- __UI__: `ReasoningSelector` collects preset or custom and optional name.
-- __Selected List__: Render custom name or `displayName` fallback; delete icon.
+- Use `MultiSelect` for selection; prevent duplicates inherently by `selectedValues` being unique ids.
+- Render Story 4's inline reasoning controls below chips in the parent.
 
 ## Data Contracts
-- `SelectedModel` includes `variantId`, `displayName` and `reasoningType`.
+- `AIModel` base type; state shape: `selectedValues: string[]` and `reasoningByModel: Record<string, { level: ReasoningLevel; tokens?: number }>`.
 
 ## UX States
-- Success toast when variant added; warning if duplicate.
+- Simple: adding a model adds one chip; no variants.
 
-## Testing Scenarios
-- Duplicate prevention works across filtering/navigations.
-- Custom names persist.
-- Deleting one variant does not affect others of same base model.
+## Prototype Notes
+- Variants deferred. Keep UI minimal.
 
 ## Definition of Done
-- Multiple variants per base model supported.
-- IDs are unique and stable during session.
-- UI shows and removes variants correctly.
+- Single entry per model; chips show/remove correctly.

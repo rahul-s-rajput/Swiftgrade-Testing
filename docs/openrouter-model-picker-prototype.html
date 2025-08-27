@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenRouter Model Picker - Assessment Integration Prototype</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .app-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .app-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .app-header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .app-header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .assessment-section {
+            padding: 30animate-pulsepx;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .assessment-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .info-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .info-card h3 {
+            color: #495057;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .info-card p {
+            color: #212529;
+            font-size: 1.1em;
+            font-weight: 500;
+        }
+
+        .open-picker-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.1em;
+            font-weight: 600;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .open-picker-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .modal {
+            background: white;
+            width: 95%;
+            max-width: 1300px;
+            height: 90vh;
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            animation: slideIn 0.3s ease;
+            overflow: hidden;
+        }
+
+        .modal-header {
+            padding: 20px 30px;
+            border-bottom: 2px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+
+        .modal-title {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: #2c3e50;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            color: #6c757d;
+            cursor: pointer;
+            padding: 5px 10px;
+            transition: color 0.2s;
+        }
+
+        .close-btn:hover {
+            color: #dc3545;
+        }
+
+        .search-section {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .search-container {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 12px 20px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.95em;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #495057;
+            border: 2px solid #dee2e6;
+        }
+
+        .btn-secondary:hover {
+            background: #f8f9fa;
+        }
+
+        .filters-section {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .filter-label {
+            font-size: 0.9em;
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .filter-select {
+            padding: 8px 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            background: white;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+
+        .filter-select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .content-section {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .models-section {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: white;
+        }
+
+        .models-header {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .models-count {
+            font-size: 0.95em;
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .models-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 15px;
+        }
+
+        .model-card {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .model-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .model-card.selected {
+            border-color: #28a745;
+            background: linear-gradient(135deg, #f0fff4 0%, #dcffe4 100%);
+        }
+
+        .model-checkbox {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 24px;
+            height: 24px;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+
+        .model-card.selected .model-checkbox {
+            background: #28a745;
+            border-color: #28a745;
+        }
+
+        .model-card.selected .model-checkbox::after {
+            content: '✓';
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .model-name {
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            font-size: 1.1em;
+            padding-right: 40px;
+        }
+
+        .model-id {
+            font-size: 0.85em;
+            color: #6c757d;
+            font-family: 'Courier New', monospace;
+            margin-bottom: 12px;
+        }
+
+        .model-features {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .feature-badge {
+            padding: 4px 10px;
+            background: #f8f9fa;
+            border-radius: 20px;
+            font-size: 0.75em;
+            color: #495057;
+            font-weight: 500;
+        }
+
+        .feature-badge.price {
+            background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
+            color: #2d3436;
+        }
+
+        .feature-badge.context {
+            background: linear-gradient(135deg, #a8e6cf 0%, #81fbb8 100%);
+            color: #00695c;
+        }
+
+        .feature-badge.reasoning {
+            background: linear-gradient(135deg, #fccbcb 0%, #ffb8b8 100%);
+            color: #c62828;
+        }
+
+        .model-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .variant-btn {
+            flex: 1;
+            padding: 8px 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.85em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .variant-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(102, 126, 234, 0.3);
+        }
+
+        .selected-section {
+            width: 400px;
+            background: #f8f9fa;
+            border-left: 2px solid #e9ecef;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .selected-header {
+            margin-bottom: 20px;
+        }
+
+        .selected-count {
+            font-size: 0.95em;
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .selected-models {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .selected-model {
+            background: white;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            padding: 15px;
+            position: relative;
+            animation: slideIn 0.3s ease;
+        }
+
+        .selected-model-name {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .selected-model-reasoning {
+            display: inline-block;
+            padding: 3px 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .remove-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: all 0.3s;
+        }
+
+        .remove-btn:hover {
+            background: #c82333;
+            transform: scale(1.1);
+        }
+
+        .modal-footer {
+            padding: 20px 30px;
+            border-top: 2px solid #e9ecef;
+            background: #f8f9fa;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .reasoning-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            z-index: 2000;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .reasoning-modal.active {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+
+        .reasoning-modal h3 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+
+        .reasoning-options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .reasoning-option {
+            padding: 15px;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .reasoning-option:hover {
+            border-color: #667eea;
+            background: #f8f9fa;
+        }
+
+        .reasoning-option.selected {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #f3f4ff 0%, #e8ebff 100%);
+        }
+
+        .reasoning-option-title {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .reasoning-option-desc {
+            font-size: 0.85em;
+            color: #6c757d;
+        }
+
+        .custom-tokens-input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .custom-tokens-input.active {
+            display: block;
+        }
+
+        .reasoning-modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .loading-spinner {
+            display: none;
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 50px auto;
+        }
+
+        .loading-spinner.active {
+            display: block;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results-section {
+            padding: 30px;
+            background: white;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .result-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .result-model {
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .result-reasoning {
+            color: #667eea;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            color: #6c757d;
+        }
+
+        .empty-state-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        .stats-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #e9ecef;
+            border-radius: 12px;
+            font-size: 0.8em;
+            margin-left: 5px;
+            font-weight: 600;
+            color: #495057;
+        }
+    </style>
+</head>
+<body>
+    <!-- Main Application Container -->
+    <div class="app-container">
+        <!-- App Header -->
+        <div class="app-header">
+            <h1>📚 AI Assessment Grading System</h1>
+            <p>Multi-Model Testing with OpenRouter Integration</p>
+        </div>
+
+        <!-- Assessment Configuration Section -->
+        <div class="assessment-section">
+            <h2 style="margin-bottom: 20px; color: #2c3e50;">Current Assessment Configuration</h2>
+            <div class="assessment-info">
+                <div class="info-card">
+                    <h3>Assessment Name</h3>
+                    <p>Math Quiz - Grade 10</p>
+                </div>
+                <div class="info-card">
+                    <h3>Total Questions</h3>
+                    <p>25 Questions</p>
+                </div>
+                <div class="info-card">
+                    <h3>Test Iterations</h3>
+                    <p>5 Iterations</p>
+                </div>
+                <div class="info-card">
+                    <h3>Selected Models</h3>
+                    <p id="selectedCount">0 Models</p>
+                </div>
+            </div>
+            <button class="open-picker-btn" onclick="openPicker()">
+                <span>🤖</span>
+                <span>Select AI Models for Grading</span>
+                <span class="stats-badge" id="modelBadge">0</span>
+            </button>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section">
+            <h2 style="margin-bottom: 20px; color: #2c3e50;">Selected Models for Testing</h2>
+            <div id="resultsContainer">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🎯</div>
+                    <h3>No Models Selected Yet</h3>
+                    <p>Click "Select AI Models for Grading" to choose models for your assessment</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Model Picker Modal -->
+    <div class="modal-overlay" id="modalOverlay" onclick="closePickerOutside(event)">
+        <div class="modal" onclick="event.stopPropagation()">
+            <!-- Modal Header -->
+            <div class="modal-header">
+                <h2 class="modal-title">🚀 OpenRouter Model Picker</h2>
+                <button class="close-btn" onclick="closePicker()">&times;</button>
+            </div>
+
+            <!-- Search Section -->
+            <div class="search-section">
+                <div class="search-container">
+                    <input type="text" class="search-input" id="searchInput" placeholder="🔍 Search models by name or ID..." oninput="filterModels()">
+                    <button class="btn btn-primary" onclick="fetchModels(true)">
+                        <span id="refreshText">↻ Refresh</span>
+                    </button>
+                    <button class="btn btn-secondary" onclick="clearFilters()">Clear Filters</button>
+                </div>
+                <div class="filters-section">
+                    <div class="filter-group">
+                        <label class="filter-label">Provider:</label>
+                        <select class="filter-select" id="providerFilter" onchange="filterModels()">
+                            <option value="">All Providers</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Max Price:</label>
+                        <select class="filter-select" id="priceFilter" onchange="filterModels()">
+                            <option value="">Any Price</option>
+                            <option value="0.001">< $0.001/1K tokens</option>
+                            <option value="0.01">< $0.01/1K tokens</option>
+                            <option value="0.1">< $0.1/1K tokens</option>
+                            <option value="1">< $1/1K tokens</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="filter-label">Min Context:</label>
+                        <select class="filter-select" id="contextFilter" onchange="filterModels()">
+                            <option value="">Any Context</option>
+                            <option value="4096">≥ 4K tokens</option>
+                            <option value="8192">≥ 8K tokens</option>
+                            <option value="32768">≥ 32K tokens</option>
+                            <option value="131072">≥ 128K tokens</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content Section -->
+            <div class="content-section">
+                <!-- Models List -->
+                <div class="models-section">
+                    <div class="models-header">
+                        <h3>Available Models</h3>
+                        <span class="models-count" id="modelsCount">Loading...</span>
+                    </div>
+                    <div class="loading-spinner active" id="loadingSpinner"></div>
+                    <div class="models-grid" id="modelsGrid"></div>
+                </div>
+
+                <!-- Selected Models -->
+                <div class="selected-section">
+                    <div class="selected-header">
+                        <h3>Selected Models</h3>
+                        <span class="selected-count" id="selectedModelsCount">0 models selected</span>
+                    </div>
+                    <div class="selected-models" id="selectedModelsList"></div>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="clearSelection()">Clear Selection</button>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-secondary" onclick="closePicker()">Cancel</button>
+                    <button class="btn btn-primary" onclick="applySelection()">
+                        Apply Selection (<span id="footerCount">0</span>)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reasoning Configuration Modal -->
+    <div class="reasoning-modal" id="reasoningModal">
+        <h3>Configure Reasoning for <span id="reasoningModelName"></span></h3>
+        <div class="reasoning-options">
+            <div class="reasoning-option" onclick="selectReasoningType('none')" data-type="none">
+                <div class="reasoning-option-title">⚡ No Reasoning</div>
+                <div class="reasoning-option-desc">Standard model without reasoning tokens</div>
+            </div>
+            <div class="reasoning-option" onclick="selectReasoningType('low')" data-type="low">
+                <div class="reasoning-option-title">🔵 Low Reasoning (20%)</div>
+                <div class="reasoning-option-desc">Quick thinking, basic analysis</div>
+            </div>
+            <div class="reasoning-option" onclick="selectReasoningType('medium')" data-type="medium">
+                <div class="reasoning-option-title">🟡 Medium Reasoning (50%)</div>
+                <div class="reasoning-option-desc">Balanced depth and speed</div>
+            </div>
+            <div class="reasoning-option" onclick="selectReasoningType('high')" data-type="high">
+                <div class="reasoning-option-title">🔴 High Reasoning (80%)</div>
+                <div class="reasoning-option-desc">Deep analysis, thorough thinking</div>
+            </div>
+            <div class="reasoning-option" onclick="selectReasoningType('custom')" data-type="custom">
+                <div class="reasoning-option-title">⚙️ Custom</div>
+                <div class="reasoning-option-desc">Set custom token allocation</div>
+            </div>
+        </div>
+        <input type="number" class="custom-tokens-input" id="customTokens" placeholder="Enter max reasoning tokens (e.g., 5000)" min="100" max="50000">
+        <div class="reasoning-modal-actions">
+            <button class="btn btn-secondary" onclick="closeReasoningModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="addVariant()">Add Variant</button>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let allModels = [];
+        let filteredModels = [];
+        let selectedModels = [];
+        let currentModelForReasoning = null;
+        let selectedReasoningType = 'medium';
+
+        // Mock some models for demonstration (in real app, fetch from API)
+        const mockModels = [
+            {
+                id: 'openai/gpt-4o',
+                name: 'GPT-4 Optimized',
+                context_length: 128000,
+                pricing: { prompt: '0.000005', completion: '0.000015' },
+                architecture: { modality: 'text' },
+                supportsReasoning: true
+            },
+            {
+                id: 'anthropic/claude-3.5-sonnet',
+                name: 'Claude 3.5 Sonnet',
+                context_length: 200000,
+                pricing: { prompt: '0.000003', completion: '0.000015' },
+                architecture: { modality: 'text' },
+                supportsReasoning: true
+            },
+            {
+                id: 'google/gemini-2.0-flash-exp',
+                name: 'Gemini 2.0 Flash',
+                context_length: 1048576,
+                pricing: { prompt: '0.0', completion: '0.0' },
+                architecture: { modality: 'multimodal' },
+                supportsReasoning: false
+            },
+            {
+                id: 'deepseek/deepseek-r1',
+                name: 'DeepSeek R1',
+                context_length: 64000,
+                pricing: { prompt: '0.00055', completion: '0.00055' },
+                architecture: { modality: 'text' },
+                supportsReasoning: true
+            },
+            {
+                id: 'meta-llama/llama-3.1-70b-instruct',
+                name: 'Llama 3.1 70B',
+                context_length: 131072,
+                pricing: { prompt: '0.00088', completion: '0.00088' },
+                architecture: { modality: 'text' },
+                supportsReasoning: false
+            },
+            {
+                id: 'mistralai/mixtral-8x7b-instruct',
+                name: 'Mixtral 8x7B',
+                context_length: 32768,
+                pricing: { prompt: '0.00024', completion: '0.00024' },
+                architecture: { modality: 'text' },
+                supportsReasoning: false
+            },
+            {
+                id: 'openai/gpt-4-turbo',
+                name: 'GPT-4 Turbo',
+                context_length: 128000,
+                pricing: { prompt: '0.00001', completion: '0.00003' },
+                architecture: { modality: 'multimodal' },
+                supportsReasoning: true
+            },
+            {
+                id: 'anthropic/claude-3-opus',
+                name: 'Claude 3 Opus',
+                context_length: 200000,
+                pricing: { prompt: '0.000015', completion: '0.000075' },
+                architecture: { modality: 'text' },
+                supportsReasoning: true
+            },
+            {
+                id: 'cohere/command-r-plus',
+                name: 'Command R+',
+                context_length: 128000,
+                pricing: { prompt: '0.000003', completion: '0.000015' },
+                architecture: { modality: 'text' },
+                supportsReasoning: false
+            }
+        ];
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchModels();
+        });
+
+        // Fetch models from OpenRouter API (or use mock data)
+        async function fetchModels(forceRefresh = false) {
+            const spinner = document.getElementById('loadingSpinner');
+            const grid = document.getElementById('modelsGrid');
+            const refreshBtn = document.getElementById('refreshText');
+            
+            spinner.classList.add('active');
+            grid.innerHTML = '';
+            refreshBtn.textContent = '⏳ Loading...';
+
+            try {
+                // Try to fetch from OpenRouter API
+                const response = await fetch('https://openrouter.ai/api/v1/models');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    allModels = data.data || [];
+                } else {
+                    // Fall back to mock data if API fails
+                    allModels = mockModels;
+                }
+            } catch (error) {
+                // Use mock data on error
+                console.log('Using mock data:', error);
+                allModels = mockModels;
+            }
+
+            // Sort models by provider
+            allModels.sort((a, b) => {
+                const providerA = a.id.split('/')[0];
+                const providerB = b.id.split('/')[0];
+                if (providerA !== providerB) {
+                    return providerA.localeCompare(providerB);
+                }
+                return (a.name || a.id).localeCompare(b.name || b.id);
+            });
+
+            // Populate provider filter
+            const providers = [...new Set(allModels.map(m => m.id.split('/')[0]))];
+            const providerFilter = document.getElementById('providerFilter');
+            providerFilter.innerHTML = '<option value="">All Providers</option>';
+            providers.forEach(provider => {
+                providerFilter.innerHTML += `<option value="${provider}">${provider}</option>`;
+            });
+
+            spinner.classList.remove('active');
+            refreshBtn.textContent = '↻ Refresh';
+            filterModels();
+        }
+
+        // Filter models based on search and filters
+        function filterModels() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const provider = document.getElementById('providerFilter').value;
+            const maxPrice = document.getElementById('priceFilter').value;
+            const minContext = document.getElementById('contextFilter').value;
+
+            filteredModels = allModels.filter(model => {
+                // Search filter
+                if (searchTerm) {
+                    const matchesSearch = 
+                        (model.name && model.name.toLowerCase().includes(searchTerm)) ||
+                        model.id.toLowerCase().includes(searchTerm);
+                    if (!matchesSearch) return false;
+                }
+
+                // Provider filter
+                if (provider) {
+                    const modelProvider = model.id.split('/')[0];
+                    if (modelProvider !== provider) return false;
+                }
+
+                // Price filter
+                if (maxPrice) {
+                    const promptPrice = parseFloat(model.pricing?.prompt || '0') * 1000;
+                    const completionPrice = parseFloat(model.pricing?.completion || '0') * 1000;
+                    if (promptPrice > parseFloat(maxPrice) || completionPrice > parseFloat(maxPrice)) {
+                        return false;
+                    }
+                }
+
+                // Context filter
+                if (minContext && model.context_length < parseInt(minContext)) {
+                    return false;
+                }
+
+                return true;
+            });
+
+            renderModels();
+        }
+
+        // Render filtered models
+        function renderModels() {
+            const grid = document.getElementById('modelsGrid');
+            const count = document.getElementById('modelsCount');
+            
+            count.textContent = `${filteredModels.length} models found`;
+
+            if (filteredModels.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #6c757d;">No models match your filters</div>';
+                return;
+            }
+
+            grid.innerHTML = filteredModels.map(model => {
+                const isSelected = selectedModels.some(m => m.baseModelId === model.id && m.reasoningType === 'none');
+                const hasVariants = selectedModels.some(m => m.baseModelId === model.id);
+                const promptPrice = parseFloat(model.pricing?.prompt || '0') * 1000;
+                const completionPrice = parseFloat(model.pricing?.completion || '0') * 1000;
+                const contextK = Math.round((model.context_length || 0) / 1000);
+
+                return `
+                    <div class="model-card ${isSelected ? 'selected' : ''}" id="model-${model.id.replace(/\//g, '-')}">
+                        <div class="model-checkbox"></div>
+                        <div class="model-name">${model.name || model.id.split('/')[1]}</div>
+                        <div class="model-id">${model.id}</div>
+                        <div class="model-features">
+                            <span class="feature-badge price">💰 $${promptPrice.toFixed(3)}/$${completionPrice.toFixed(3)}</span>
+                            <span class="feature-badge context">📝 ${contextK}K</span>
+                            ${model.supportsReasoning || model.id.includes('gpt-4') || model.id.includes('claude') || model.id.includes('deepseek') ? 
+                                '<span class="feature-badge reasoning">🧠 Reasoning</span>' : ''}
+                            ${hasVariants ? `<span class="feature-badge" style="background: #e3f2fd; color: #1976d2;">✨ ${selectedModels.filter(m => m.baseModelId === model.id).length} variant(s)</span>` : ''}
+                        </div>
+                        <div class="model-actions">
+                            <button class="variant-btn" onclick="toggleModelSelection('${model.id}', event)" style="background: ${isSelected ? '#dc3545' : 'linear-gradient(135deg, #28a745 0%, #20c997 100%)'}">
+                                ${isSelected ? '✓ Selected' : 'Select Model'}
+                            </button>
+                            ${(model.supportsReasoning || model.id.includes('gpt-4') || model.id.includes('claude') || model.id.includes('deepseek')) ? 
+                                `<button class="variant-btn" onclick="openReasoningModal('${model.id}', '${(model.name || model.id).replace(/'/g, "\\'")}', event)">+ Reasoning</button>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Toggle model selection
+        function toggleModelSelection(modelId, event) {
+            event.stopPropagation();
+            const model = allModels.find(m => m.id === modelId);
+            if (!model) return;
+
+            const existingIndex = selectedModels.findIndex(m => m.baseModelId === modelId && m.reasoningType === 'none');
+            
+            if (existingIndex > -1) {
+                // Remove selection
+                selectedModels.splice(existingIndex, 1);
+            } else {
+                // Add selection
+                selectedModels.push({
+                    id: `${modelId}_none_${Date.now()}`,
+                    baseModelId: modelId,
+                    name: model.name || modelId,
+                    reasoningType: 'none',
+                    displayName: model.name || modelId
+                });
+            }
+
+            updateSelectedDisplay();
+            renderModels();
+        }
+
+        // Open reasoning configuration modal
+        function openReasoningModal(modelId, modelName, event) {
+            event.stopPropagation();
+            currentModelForReasoning = { id: modelId, name: modelName };
+            document.getElementById('reasoningModelName').textContent = modelName;
+            document.getElementById('reasoningModal').classList.add('active');
+            document.getElementById('modalOverlay').style.zIndex = '999';
+            
+            // Reset selection
+            document.querySelectorAll('.reasoning-option').forEach(opt => opt.classList.remove('selected'));
+            document.querySelector('[data-type="medium"]').classList.add('selected');
+            selectedReasoningType = 'medium';
+            document.getElementById('customTokens').classList.remove('active');
+        }
+
+        // Close reasoning modal
+        function closeReasoningModal() {
+            document.getElementById('reasoningModal').classList.remove('active');
+            document.getElementById('modalOverlay').style.zIndex = '1000';
+            currentModelForReasoning = null;
+        }
+
+        // Select reasoning type
+        function selectReasoningType(type) {
+            selectedReasoningType = type;
+            document.querySelectorAll('.reasoning-option').forEach(opt => opt.classList.remove('selected'));
+            document.querySelector(`[data-type="${type}"]`).classList.add('selected');
+            
+            const customInput = document.getElementById('customTokens');
+            if (type === 'custom') {
+                customInput.classList.add('active');
+                customInput.focus();
+            } else {
+                customInput.classList.remove('active');
+            }
+        }
+
+        // Add variant with reasoning
+        function addVariant() {
+            if (!currentModelForReasoning) return;
+
+            let reasoningConfig = {};
+            let displaySuffix = '';
+
+            switch (selectedReasoningType) {
+                case 'none':
+                    displaySuffix = '';
+                    break;
+                case 'low':
+                    reasoningConfig = { effort: 'low', include_reasoning: true };
+                    displaySuffix = ' (Low Reasoning)';
+                    break;
+                case 'medium':
+                    reasoningConfig = { effort: 'medium', include_reasoning: true };
+                    displaySuffix = ' (Medium Reasoning)';
+                    break;
+                case 'high':
+                    reasoningConfig = { effort: 'high', include_reasoning: true };
+                    displaySuffix = ' (High Reasoning)';
+                    break;
+                case 'custom':
+                    const tokens = parseInt(document.getElementById('customTokens').value);
+                    if (!tokens || tokens < 100) {
+                        alert('Please enter a valid number of tokens (minimum 100)');
+                        return;
+                    }
+                    reasoningConfig = { max_tokens: tokens, include_reasoning: true };
+                    displaySuffix = ` (Custom ${tokens} tokens)`;
+                    break;
+            }
+
+            // Check if this exact variant already exists
+            const exists = selectedModels.some(m => 
+                m.baseModelId === currentModelForReasoning.id && 
+                m.reasoningType === selectedReasoningType
+            );
+
+            if (exists) {
+                alert('This variant already exists!');
+                return;
+            }
+
+            // Add the variant
+            selectedModels.push({
+                id: `${currentModelForReasoning.id}_${selectedReasoningType}_${Date.now()}`,
+                baseModelId: currentModelForReasoning.id,
+                name: currentModelForReasoning.name,
+                reasoningType: selectedReasoningType,
+                reasoningConfig: reasoningConfig,
+                displayName: currentModelForReasoning.name + displaySuffix
+            });
+
+            updateSelectedDisplay();
+            renderModels();
+            closeReasoningModal();
+        }
+
+        // Update selected models display
+        function updateSelectedDisplay() {
+            const list = document.getElementById('selectedModelsList');
+            const count = document.getElementById('selectedModelsCount');
+            const footerCount = document.getElementById('footerCount');
+            
+            count.textContent = `${selectedModels.length} model${selectedModels.length !== 1 ? 's' : ''} selected`;
+            footerCount.textContent = selectedModels.length;
+
+            if (selectedModels.length === 0) {
+                list.innerHTML = '<div style="text-align: center; padding: 40px; color: #6c757d;">No models selected yet</div>';
+                return;
+            }
+
+            list.innerHTML = selectedModels.map((model, index) => {
+                const reasoningBadge = {
+                    'none': { color: '#6c757d', bg: '#e9ecef', text: 'Standard' },
+                    'low': { color: '#fff', bg: '#17a2b8', text: 'Low' },
+                    'medium': { color: '#fff', bg: '#ffc107', text: 'Medium' },
+                    'high': { color: '#fff', bg: '#dc3545', text: 'High' },
+                    'custom': { color: '#fff', bg: '#6f42c1', text: 'Custom' }
+                }[model.reasoningType];
+
+                return `
+                    <div class="selected-model">
+                        <button class="remove-btn" onclick="removeModel(${index})">×</button>
+                        <div class="selected-model-name">${model.displayName}</div>
+                        <span class="selected-model-reasoning" style="background: ${reasoningBadge.bg}; color: ${reasoningBadge.color}">
+                            ${reasoningBadge.text}
+                        </span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Remove selected model
+        function removeModel(index) {
+            selectedModels.splice(index, 1);
+            updateSelectedDisplay();
+            renderModels();
+        }
+
+        // Clear all filters
+        function clearFilters() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('providerFilter').value = '';
+            document.getElementById('priceFilter').value = '';
+            document.getElementById('contextFilter').value = '';
+            filterModels();
+        }
+
+        // Clear selection
+        function clearSelection() {
+            if (confirm('Clear all selected models?')) {
+                selectedModels = [];
+                updateSelectedDisplay();
+                renderModels();
+            }
+        }
+
+        // Open picker modal
+        function openPicker() {
+            document.getElementById('modalOverlay').classList.add('active');
+            if (allModels.length === 0) {
+                fetchModels();
+            }
+        }
+
+        // Close picker modal
+        function closePicker() {
+            document.getElementById('modalOverlay').classList.remove('active');
+        }
+
+        // Close picker when clicking outside
+        function closePickerOutside(event) {
+            if (event.target === document.getElementById('modalOverlay')) {
+                closePicker();
+            }
+        }
+
+        // Apply selection and update main app
+        function applySelection() {
+            // Update main app display
+            const resultsContainer = document.getElementById('resultsContainer');
+            const selectedCount = document.getElementById('selectedCount');
+            const modelBadge = document.getElementById('modelBadge');
+            
+            selectedCount.textContent = `${selectedModels.length} Models`;
+            modelBadge.textContent = selectedModels.length;
+
+            if (selectedModels.length > 0) {
+                resultsContainer.innerHTML = `
+                    <div class="results-grid">
+                        ${selectedModels.map(model => {
+                            const reasoningLabel = {
+                                'none': 'Standard',
+                                'low': 'Low Reasoning (20%)',
+                                'medium': 'Medium Reasoning (50%)',
+                                'high': 'High Reasoning (80%)',
+                                'custom': `Custom (${model.reasoningConfig?.max_tokens || 0} tokens)`
+                            }[model.reasoningType];
+
+                            return `
+                                <div class="result-card">
+                                    <div class="result-model">${model.name}</div>
+                                    <div class="result-reasoning">${reasoningLabel}</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                    <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 10px;">
+                        <h3 style="margin-bottom: 15px; color: #2c3e50;">API Configuration Preview</h3>
+                        <pre style="background: #2c3e50; color: #fff; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 0.85em;">${JSON.stringify(selectedModels.map(m => ({
+                            model: m.baseModelId,
+                            reasoning: m.reasoningConfig || {},
+                            displayName: m.displayName
+                        })), null, 2)}</pre>
+                    </div>
+                    <div style="margin-top: 20px; text-align: center;">
+                        <button class="btn btn-primary" style="font-size: 1.1em; padding: 15px 40px;" onclick="alert('Ready to start assessment! In the real app, this would begin the grading process.')">
+                            🚀 Start Assessment Grading
+                        </button>
+                    </div>
+                `;
+            } else {
+                resultsContainer.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🎯</div>
+                        <h3>No Models Selected Yet</h3>
+                        <p>Click "Select AI Models for Grading" to choose models for your assessment</p>
+                    </div>
+                `;
+            }
+
+            closePicker();
+        }
+
+        // Add keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                if (document.getElementById('reasoningModal').classList.contains('active')) {
+                    closeReasoningModal();
+                } else if (document.getElementById('modalOverlay').classList.contains('active')) {
+                    closePicker();
+                }
+            }
+        });
+    </script>
+</body>
+</html>

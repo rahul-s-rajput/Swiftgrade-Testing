@@ -1,22 +1,23 @@
 # Story 11: Mobile Responsiveness
 
 ## Context and Goals
-Make picker usable on phones and small screens with touch-friendly controls.
+Make the dropdown selector usable on phones and small screens with touch-friendly controls and mobile patterns.
 
-- Source: User Stories (Story 11), Implementation Plan (Accessibility/Design).
+- Source: `docs/openrouter-dropdown-user-stories.md` (Story 11), `docs/openrouter-dropdown-implementation-plan.md` (Mobile & Responsiveness).
 
 ## Acceptance Criteria
-- [ ] Responsive grid layout (1 col on small, 2+ on larger).
-- [ ] Touch-friendly controls with larger hit targets.
-- [ ] Swipe gestures for panels where appropriate.
-- [ ] Collapsible filters on mobile.
-- [ ] Bottom sheet modal on mobile for Reasoning Selector.
+- [ ] Trigger adapts to small screens (full-width button with selected count).
+- [ ] Touch-friendly controls (44px min target) for options and chips.
+- [ ] Reasoning popover presents as a bottom sheet on mobile.
+- [ ] Chips area collapses to horizontal scroll on small screens.
+- [ ] Dropdown panel uses viewport height with internal scroll and sticky footer.
 - [ ] Optimized for small screens; landscape supported.
 
 ## Implementation Plan
-- __Responsive CSS__: Tailwind breakpoints.
-- __Touch handlers__: Lightweight gesture support; optional lib if needed.
-- __Layout shifts__: Filters collapse into accordion; selection panel becomes bottom drawer.
+- __Responsive CSS__: Tailwind breakpoints for trigger, panel, and chips wrapper.
+- __Bottom Sheet__: Media-query switch for `ReasoningConfigPopover` to bottom sheet.
+- __Chips__: Horizontal scroll with fade edges on small screens.
+- __Sticky Footer__: Actions (Export/Import/Cost) pinned at bottom of dropdown on mobile.
 
 ## Testing Scenarios
 - Simulate common devices in devtools.

@@ -1,30 +1,25 @@
 # Story 8: Keyboard Navigation
 
 ## Context and Goals
-Provide keyboard-first navigation and accessibility for power users and a11y compliance.
+Provide minimal keyboard behaviors that come naturally with the existing component. Full a11y/ARIA is out-of-scope for the prototype.
 
-- Source: User Stories (Story 8), Implementation Plan (Accessibility).
+- Source: This doc. Component: `src/components/MultiSelect.tsx`.
 
 ## Acceptance Criteria
-- [ ] Tab navigation between interactive elements.
-- [ ] Arrow keys navigate model grid.
-- [ ] Space/Enter to select models.
-- [ ] Escape to close modal.
-- [ ] `/` to focus search.
-- [ ] Ctrl+A to select all visible.
-- [ ] Delete to remove selected.
-- [ ] Focus trap in modal.
+- [ ] Pressing the trigger opens/closes the dropdown.
+- [ ] When opened, the search input is focusable and typing filters results.
+- [ ] Clicking outside closes the dropdown.
+- [ ] Optional: Escape closes the dropdown (nice-to-have enhancement).
+- [ ] Tabbing moves focus through focusable elements (browser default).
 
 ## Implementation Plan
-- __Key handling__: Add handlers in `OpenRouterModelPicker.tsx` and propagate to grid.
-- __ARIA__: Add roles/labels for cards, buttons, and list.
-- __Focus management__: Initial focus to search input; trap while open.
-- __Shortcut guide__: Small help tooltip or `?` modal.
+- Rely on existing `MultiSelect` behavior: click to open, input accepts typing, click outside closes.
+- Optional: Focus the search input when opening by moving `setIsOpen(true)` then focusing the input via a ref.
+- Optional: Add an onKeyDown handler to close on Escape.
 
 ## Testing Scenarios
-- Keyboard-only flows succeed for all core actions.
-- Screen reader announces labels correctly.
+- Ensure outside click closes the panel. If Escape is implemented, it also closes.
+- Ensure typing filters while input is focused.
 
 ## Definition of Done
-- All shortcuts implemented and documented.
-- a11y checks pass (basic screen reader smoke tests).
+- Minimal keyboard interactions work without errors.
