@@ -1,15 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, AlertCircle, Upload, Sparkles } from 'lucide-react';
 import { useAssessments } from '../context/AssessmentContext';
 import { FileUpload } from '../components/FileUpload';
 import { MultiSelect } from '../components/MultiSelect';
 import { NumberInput } from '../components/NumberInput';
-import { mockAIModels } from '../utils/mockData';
+import { useOpenRouterModels } from '../hooks/useOpenRouterModels';
 
 export const NewAssessment: React.FC = () => {
   const navigate = useNavigate();
   const { addAssessment } = useAssessments();
+  const { models, loading: modelsLoading, error: modelsError, refetch: refetchModels, modelInfoById } = useOpenRouterModels();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -23,6 +24,54 @@ export const NewAssessment: React.FC = () => {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Story 4: Reasoning configuration per selected selection (supports duplicates)
+  type ReasoningLevel = 'none' | 'low' | 'medium' | 'high' | 'custom';
+  const [reasoningBySelection, setReasoningBySelection] = useState<Array<{ level: ReasoningLevel; tokens?: number }>>([]);
+
+  // Popover state for per-chip reasoning configuration
+  const [chipMenu, setChipMenu] = useState<{ index: number | null; id: string | null; anchor: { left: number; top: number } | null }>({ index: null, id: null, anchor: null });
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const chipMenuContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (chipMenu.index === null) return;
+      const target = e.target as Node;
+      if (popoverRef.current && !popoverRef.current.contains(target)) {
+        setChipMenu({ index: null, id: null, anchor: null });
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [chipMenu.index]);
+
+  // Ensure reasoning state stays in sync with selected models (index-aligned)
+  useEffect(() => {
+    setReasoningBySelection(prev => formData.selectedModels.map((_, i) => prev[i] || { level: 'none' }));
+  }, [formData.selectedModels]);
+
+  const renderOptionMeta = (id: string) => {
+    const raw = modelInfoById?.[id]?.raw as { context_length?: number; pricing?: { prompt?: number | string; completion?: number | string } } | undefined;
+    if (!raw) return null;
+    const p = raw.pricing;
+    if (!p) return null;
+    const fmt = (val: number | string | undefined) => {
+      if (val === undefined || val === null) return null;
+      const num = typeof val === 'number' ? val : Number(val);
+      if (!isFinite(num)) return null;
+      const usdPerMillion = num * 1_000_000;
+      const display = usdPerMillion.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return `$${display}/M`;
+    };
+    const input = fmt(p.prompt);
+    const output = fmt(p.completion);
+    const parts: string[] = [];
+    if (input) parts.push(`${input} input tokens`);
+    if (output) parts.push(`${output} output tokens`);
+    if (parts.length === 0) return null;
+    return <span>{parts.join(' | ')}</span>;
+  };
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -178,13 +227,167 @@ export const NewAssessment: React.FC = () => {
 
               {/* AI Model Selection */}
               <div>
-                <MultiSelect
-                  label="Select AI Models for Testing"
-                  options={mockAIModels}
-                  selectedValues={formData.selectedModels}
-                  onChange={(values) => setFormData({ ...formData, selectedModels: values })}
-                  placeholder="Choose models to evaluate..."
-                />
+                {modelsLoading ? (
+                  <div className="flex items-center text-slate-600">
+                    <Upload className="w-4 h-4 mr-2 animate-spin" />
+                    Loading models...
+                  </div>
+                ) : modelsError ? (
+                  <div className="flex items-center justify-between gap-3 p-3 border border-red-200 rounded-lg bg-red-50">
+                    <div className="flex items-center text-sm text-red-700">
+                      <AlertCircle className="w-4 h-4 mr-1" />
+                      {modelsError}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={refetchModels}
+                      className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : (
+                  <div ref={chipMenuContainerRef} className="relative">
+                  <MultiSelect
+                    label="Select AI Models for Testing"
+                    options={models}
+                    selectedValues={formData.selectedModels}
+                    onChange={(values) => {
+                      const prev = formData.selectedModels;
+                      // Append case (allowDuplicates adds to end)
+                      if (values.length === prev.length + 1 && prev.every((v, i) => v === values[i])) {
+                        setFormData({ ...formData, selectedModels: values });
+                        setReasoningBySelection(prevReasoning => [...prevReasoning, { level: 'none' }]);
+                        return;
+                      }
+                      // Removal case: detect removed index by first mismatch
+                      if (values.length + 1 === prev.length) {
+                        let removedIndex = values.length; // default: last
+                        for (let i = 0; i < values.length; i++) {
+                          if (values[i] !== prev[i]) { removedIndex = i; break; }
+                        }
+                        setFormData({ ...formData, selectedModels: values });
+                        setReasoningBySelection(prevReasoning => prevReasoning.filter((_, i) => i !== removedIndex));
+                        return;
+                      }
+                      // Fallback: length unchanged or other reorder - realign by index
+                      setFormData({ ...formData, selectedModels: values });
+                      setReasoningBySelection(prevReasoning => values.map((_, i) => prevReasoning[i] || { level: 'none' }));
+                    }}
+                    placeholder="Choose models to evaluate..."
+                    renderOptionMeta={renderOptionMeta}
+                    allowDuplicates
+                    maxPerOption={4}
+                    shouldShowChipMenuAt={(id, _index) => !!modelInfoById?.[id]?.supportsReasoning}
+                    getChipBadgeAt={(_id, index) => {
+                      const conf = reasoningBySelection[index];
+                      if (!conf || conf.level === 'none') return (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/70 text-slate-600 border">None</span>
+                      );
+                      if (conf.level === 'custom') return (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/70 text-slate-700 border">Custom{conf.tokens ? `: ${conf.tokens}` : ''}</span>
+                      );
+                      return (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/70 text-slate-700 border">{conf.level.charAt(0).toUpperCase() + conf.level.slice(1)}</span>
+                      );
+                    }}
+                    onChipMenuRequestAt={(id, index, rect) => {
+                      const containerRect = chipMenuContainerRef.current?.getBoundingClientRect();
+                      const left = containerRect ? (rect.right - containerRect.left + 6) : (rect.right + 6);
+                      const top = containerRect ? (rect.top - containerRect.top + rect.height / 2) : (rect.top + rect.height / 2);
+                      setChipMenu({ index, id, anchor: { left, top } });
+                    }}
+                  />
+                  {/* Popover for per-chip reasoning configuration */}
+                  {chipMenu.index !== null && chipMenu.anchor && (
+                    <div
+                      ref={popoverRef}
+                      className="absolute z-50 bg-white border rounded-lg shadow-lg p-2 w-56 transform -translate-y-1/2"
+                      style={{ left: chipMenu.anchor.left, top: chipMenu.anchor.top }}
+                    >
+                      {(() => {
+                        const idx = chipMenu.index as number;
+                        const id = (chipMenu.id as string) || formData.selectedModels[idx];
+                        const info = modelInfoById?.[id];
+                        const supportsReasoning = info?.supportsReasoning ?? false;
+                        const reasoningType = (info?.reasoningType ?? 'none') as 'effort' | 'max_tokens' | 'both' | 'none';
+                        const conf = reasoningBySelection[idx] || { level: 'none' as ReasoningLevel };
+                        const options: ReasoningLevel[] = !supportsReasoning
+                          ? ['none']
+                          : reasoningType === 'effort'
+                            ? ['none', 'low', 'medium', 'high']
+                            : reasoningType === 'max_tokens'
+                              ? ['none', 'custom']
+                              : ['none', 'low', 'medium', 'high', 'custom'];
+                        const currentLevel: ReasoningLevel = (options.includes(conf.level) ? conf.level : 'none');
+                        const invalidCustom = currentLevel === 'custom' && (!conf.tokens || conf.tokens < 256);
+                        return (
+                          <div className="space-y-2">
+                            {supportsReasoning ? (
+                              <>
+                                <div className="flex flex-col gap-1">
+                                  {options.filter(opt => opt !== 'custom').map(opt => (
+                                    <button
+                                      key={opt}
+                                      type="button"
+                                      className={`w-full text-left px-2 py-1 rounded text-sm hover:bg-slate-50 ${currentLevel === opt ? 'bg-slate-100' : ''}`}
+                                      onClick={() => {
+                                        setReasoningBySelection(prev => {
+                                          const next = [...prev];
+                                          next[idx] = { level: opt };
+                                          return next;
+                                        });
+                                        setChipMenu({ index: null, id: null, anchor: null });
+                                      }}
+                                    >
+                                      {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                                    </button>
+                                  ))}
+                                  {options.includes('custom') && (
+                                    <div className="px-2 py-1">
+                                      <div className="text-xs text-slate-600 mb-1">Custom tokens (≥ 256)</div>
+                                      <input
+                                        type="number"
+                                        min={256}
+                                        max={32000}
+                                        className={`w-full px-2 py-1 border rounded-md text-sm ${invalidCustom ? 'border-red-300' : ''}`}
+                                        value={currentLevel === 'custom' ? (conf.tokens ?? '') : ''}
+                                        onChange={(e) => {
+                                          const val = Number(e.target.value);
+                                          setReasoningBySelection(prev => {
+                                            const next = [...prev];
+                                            next[idx] = { level: 'custom', tokens: Number.isFinite(val) ? val : undefined };
+                                            return next;
+                                          });
+                                        }}
+                                        placeholder="e.g. 1024"
+                                      />
+                                      {invalidCustom && <div className="text-[11px] text-red-600 mt-1">Please enter ≥ 256</div>}
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="text-xs text-slate-500 px-2 py-1">Reasoning not supported</div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                  </div>
+                )}
+                {formData.selectedModels.length > 0 && (
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, selectedModels: [] })}
+                      className="text-sm text-slate-600 hover:text-slate-900 underline"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                )}
                 {errors.selectedModels && (
                   <div className="mt-2 flex items-center text-sm text-red-600">
                     <AlertCircle className="w-4 h-4 mr-1" />

@@ -1,7 +1,7 @@
 # Story 3: Multi-Model Selection
 
 ## Context and Goals
-Allow users to select/deselect multiple models with visual feedback and persistent selection while filtering, showing selections as chips above the dropdown.
+Allow users to select/deselect multiple OpenRouter models with visual feedback and persistent selection while filtering, showing selections as chips above the dropdown. Selection is by exact OpenRouter model `id` (e.g., `openai/gpt-5`, `google/gemini-2.5-flash-image-preview:free`).
 
 - Source: This doc. Component: `src/components/MultiSelect.tsx`.
 
@@ -15,12 +15,12 @@ Allow users to select/deselect multiple models with visual feedback and persiste
 - [ ] Show count of selected models on trigger.
 
 ## Implementation Plan
-- __Parent state__: Maintain `selectedValues: string[]` and pass to `MultiSelect`.
+- __Parent state__: Maintain `selectedValues: string[]` of OpenRouter model ids and pass to `MultiSelect`.
 - __Chips/UI__: `MultiSelect` already renders removable chips and selected count on trigger.
 - __Optional Clear All__: Parent renders a small button to reset `selectedValues` to `[]`.
 
 ## Data Contracts
-- `AIModel` from `src/types/index.ts`; `selectedValues: string[]` of model ids.
+- `AIModel` from `src/types/index.ts`; `selectedValues: string[]` of OpenRouter model ids.
 
 ## UX States
 - Selecting a model animates/marks dropdown item.

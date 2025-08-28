@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Check, ChevronDown, Search, X } from 'lucide-react';
+import { Check, ChevronDown, Search, X, MoreVertical } from 'lucide-react';
 import { AIModel } from '../types';
 
 interface MultiSelectProps {
@@ -8,6 +8,16 @@ interface MultiSelectProps {
   selectedValues: string[];
   onChange: (values: string[]) => void;
   placeholder?: string;
+  getChipBadge?: (id: string) => React.ReactNode;
+  onChipMenuRequest?: (id: string, anchorRect: DOMRect) => void;
+  shouldShowChipMenu?: (id: string) => boolean;
+  renderOptionMeta?: (id: string) => React.ReactNode;
+  getChipSuffix?: (id: string) => React.ReactNode;
+  allowDuplicates?: boolean;
+  getChipBadgeAt?: (id: string, index: number) => React.ReactNode;
+  onChipMenuRequestAt?: (id: string, index: number, anchorRect: DOMRect) => void;
+  shouldShowChipMenuAt?: (id: string, index: number) => boolean;
+  maxPerOption?: number;
 }
 
 export const MultiSelect: React.FC<MultiSelectProps> = ({
@@ -15,7 +25,17 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   options,
   selectedValues,
   onChange,
-  placeholder = "Select options..."
+  placeholder = "Select options...",
+  getChipBadge,
+  onChipMenuRequest,
+  shouldShowChipMenu,
+  renderOptionMeta,
+  getChipSuffix,
+  allowDuplicates = false,
+  getChipBadgeAt,
+  onChipMenuRequestAt,
+  shouldShowChipMenuAt,
+  maxPerOption,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -25,8 +45,6 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     option.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     option.provider.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  const selectedOptions = options.filter(option => selectedValues.includes(option.id));
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -40,6 +58,14 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   }, []);
 
   const toggleOption = (optionId: string) => {
+    if (allowDuplicates) {
+      const count = selectedValues.filter(id => id === optionId).length;
+      if (typeof maxPerOption === 'number' && count >= maxPerOption) {
+        return;
+      }
+      onChange([...selectedValues, optionId]);
+      return;
+    }
     if (selectedValues.includes(optionId)) {
       onChange(selectedValues.filter(id => id !== optionId));
     } else {
@@ -47,8 +73,8 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     }
   };
 
-  const removeOption = (optionId: string) => {
-    onChange(selectedValues.filter(id => id !== optionId));
+  const removeOptionAt = (index: number) => {
+    onChange(selectedValues.filter((_, i) => i !== index));
   };
 
   return (
@@ -59,22 +85,60 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
       
       <div className="relative" ref={dropdownRef}>
         {/* Selected items display */}
-        {selectedOptions.length > 0 && (
+        {selectedValues.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
-            {selectedOptions.map(option => (
+            {selectedValues.map((id, idx) => {
+              const option = options.find(o => o.id === id);
+              if (!option) return null;
+              const chipKey = `${id}-${idx}`;
+              const showMenu = typeof shouldShowChipMenuAt === 'function'
+                ? shouldShowChipMenuAt(id, idx)
+                : (shouldShowChipMenu ? shouldShowChipMenu(id) : false);
+              const badgeNode = typeof getChipBadgeAt === 'function'
+                ? getChipBadgeAt(id, idx)
+                : (getChipBadge ? getChipBadge(id) : null);
+              return (
               <span
-                key={option.id}
+                key={chipKey}
                 className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full"
               >
                 {option.name}
+                {(() => {
+                  if (!getChipSuffix) return null;
+                  const node = getChipSuffix(option.id);
+                  return node ? (
+                    <span className="ml-1 text-[10px] text-blue-900/70">{node}</span>
+                  ) : null;
+                })()}
+                {badgeNode && (
+                  <span className="ml-1">{badgeNode}</span>
+                )}
+                {(onChipMenuRequestAt || onChipMenuRequest) && showMenu && (
+                  <button
+                    type="button"
+                    aria-label={`Configure ${option.name}`}
+                    onClick={(e) => {
+                      const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                      if (onChipMenuRequestAt) {
+                        onChipMenuRequestAt(id, idx, rect);
+                      } else if (onChipMenuRequest) {
+                        onChipMenuRequest(option.id, rect);
+                      }
+                    }}
+                    className="ml-1 hover:bg-blue-200 rounded-full p-0.5"
+                  >
+                    <MoreVertical className="w-3 h-3" />
+                  </button>
+                )}
                 <button
-                  onClick={() => removeOption(option.id)}
+                  onClick={() => removeOptionAt(idx)}
                   className="ml-1 hover:bg-blue-200 rounded-full p-0.5"
                 >
                   <X className="w-3 h-3" />
                 </button>
               </span>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -113,23 +177,37 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
 
             {/* Options list */}
             <div className="max-h-40 overflow-y-auto">
-              {filteredOptions.map(option => (
-                <button
-                  key={option.id}
-                  onClick={() => toggleOption(option.id)}
-                  className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center justify-between group"
-                >
-                  <div>
-                    <div className="font-medium text-gray-900">{option.name}</div>
-                    <div className="text-sm text-gray-500">{option.provider}</div>
-                  </div>
-                  {selectedValues.includes(option.id) && (
-                    <Check className="w-4 h-4 text-blue-600" />
-                  )}
-                </button>
-              ))}
+              {filteredOptions.map(option => {
+                const count = selectedValues.filter(id => id === option.id).length;
+                const atMax = allowDuplicates && typeof maxPerOption === 'number' && count >= maxPerOption;
+                return (
+                  <button
+                    key={option.id}
+                    onClick={() => toggleOption(option.id)}
+                    disabled={atMax}
+                    className={`w-full px-3 py-2 text-left flex items-center justify-between group ${atMax ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                  >
+                    <div>
+                      <div className="font-medium text-gray-900">{option.name}</div>
+                      <div className="text-sm text-gray-500">{option.provider}</div>
+                      {(() => {
+                        if (!renderOptionMeta) return null;
+                        const node = renderOptionMeta(option.id);
+                        return node ? (
+                          <div className="text-xs text-gray-400 mt-0.5">{node}</div>
+                        ) : null;
+                      })()}
+                    </div>
+                    {selectedValues.includes(option.id) && (
+                      <Check className="w-4 h-4 text-blue-600" />
+                    )}
+                  </button>
+                );
+              })}
               {filteredOptions.length === 0 && (
-                <div className="px-3 py-2 text-gray-500 text-center">No models found</div>
+                <div className="px-3 py-2 text-gray-500 text-center">
+                  {options.length > 0 && searchTerm ? 'No results' : 'No models found'}
+                </div>
               )}
             </div>
           </div>
