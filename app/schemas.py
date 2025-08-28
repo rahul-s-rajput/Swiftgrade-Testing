@@ -37,3 +37,21 @@ class ErrorDetail(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: ErrorDetail
+
+
+# --- Story 21: Question Config + Human Marks ---
+
+class QuestionConfigQuestion(BaseModel):
+    question_id: str
+    number: int = Field(..., ge=1)
+    max_marks: float = Field(..., ge=0)
+
+
+class QuestionConfigReq(BaseModel):
+    session_id: str
+    questions: List[QuestionConfigQuestion]
+    human_marks_by_qid: Dict[str, float]
+
+
+class OkRes(BaseModel):
+    ok: bool = True

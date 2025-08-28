@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from .util.errors import http_exception_handler, validation_exception_handler, general_exception_handler
 from .routers import sessions as sessions_router
 from .routers import images as images_router
+from .routers import questions as questions_router
 
 
 def _cors_origins() -> list[str]:
@@ -42,3 +43,4 @@ def health():
 # Routers
 app.include_router(sessions_router.router)
 app.include_router(images_router.router)
+app.include_router(questions_router.router)

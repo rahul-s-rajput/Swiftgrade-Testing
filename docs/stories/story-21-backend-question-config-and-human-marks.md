@@ -75,3 +75,51 @@ POST `/questions/config`
 ## Frontend Alignment
 - Add a textarea or JSON editor that posts `human_marks_by_qid` as JSON for all questions (not only non-100%).
 
+
+## Implementation Notes
+
+• __Endpoint__: `POST /questions/config` in `app/routers/questions.py`.
+
+• __Models__: defined in `app/schemas.py`
+  - `QuestionConfigQuestion { question_id, number>=1, max_marks>=0 }`
+  - `QuestionConfigReq { session_id, questions[], human_marks_by_qid{} }`
+  - `OkRes { ok: true }`
+
+• __Validation__
+  - Session must exist in `public.session` (404 otherwise).
+  - `questions[].question_id` must be unique within the payload.
+  - `questions[].number` must be unique within the payload.
+  - Every key in `human_marks_by_qid` must exist in `questions[]`.
+  - Each mark must satisfy `0 <= mark <= max_marks`.
+  - Invalid input yields HTTP 422 with details.
+
+• __Persistence__
+  - Upsert into `public.question` keyed by `(session_id, question_id)` via `on_conflict`.
+  - DB constraint enforces `(session_id, number)` uniqueness.
+  - Authoritative payload: delete any existing questions for the session not present in the new payload.
+  - Upsert into `public.stats` for the session, replacing `human_marks_by_qid` and bumping `updated_at` to `now()`.
+
+• __Idempotency__
+  - Re-posting the same payload results in no-op updates and `{ ok: true }`.
+
+• __Prereqs__
+  - Supabase tables from this story are created (`public.question`, `public.stats`).
+  - Backend configured with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+
+• __Smoke Test (PowerShell)__
+```powershell
+$sessionId = "5a9a3abc-3aaa-48c2-b602-083367238c6e"
+
+$body = @{
+  session_id = $sessionId
+  questions = @(
+    @{ question_id = "Q1"; number = 1; max_marks = 10 },
+    @{ question_id = "Q2"; number = 2; max_marks = 5 }
+  )
+  human_marks_by_qid = @{ Q1 = 9; Q2 = 3 }
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/questions/config `
+  -ContentType "application/json" -Body $body
+```
+
