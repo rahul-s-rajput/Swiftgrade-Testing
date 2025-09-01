@@ -92,7 +92,7 @@ function convertReasoningToOpenRouterFormat(
         perModelReasoning[model] = { effort: 'high' };
         hasAnyReasoning = true;
       }
-    } else if (reasoning.level !== 'none' && reasoning.level !== 'custom') {
+    } else if (reasoning.level !== 'custom') {
       // Effort-based reasoning (low/medium/high)
       if (supportsEffort) {
         perModelReasoning[model] = { effort: reasoning.level };
