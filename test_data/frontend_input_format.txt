@@ -1,0 +1,43 @@
+# QUESTIONS LIST FOR FRONTEND INPUT
+# Copy and paste this into the "Question List" field
+
+Q1: Differentiate f(x) = 3x³ - 2x² + 5x - 7 (10 marks)
+Q2: Solve the integral ∫(2x² + 3x - 1)dx (15 marks)
+Q3: Explain photosynthesis and write chemical equation (12 marks)
+Q4: Calculate area of circle with radius r = 7.5 cm (8 marks)
+Q5: Balance chemical equation Fe + O₂ → Fe₂O₃ (10 marks)
+Q6: Ball thrown upward - find max height and time (15 marks)
+Q7: Describe atomic structure, atomic number, mass number (10 marks)
+Q8: Find roots of x² - 5x + 6 = 0 (8 marks)
+Q9: Convert 75°F to Celsius and Kelvin (7 marks)
+Q10: State Newton's Second Law and mathematical form (5 marks)
+
+# HUMAN GRADED MARKS FOR FRONTEND INPUT
+
+## FOR SARAH JOHNSON (94/100) - HIGH PERFORMER
+# Copy and paste this into the "Human Graded Marks" field
+
+Q1: 10/10 - Perfect application of power rule
+Q2: 14/15 - Minor formatting issue in final answer  
+Q3: 11/12 - Missing detail about light/dark reactions
+Q4: 8/8 - Correct formula and calculation
+Q5: 10/10 - Perfectly balanced equation
+Q6: 13/15 - Small rounding error in final height
+Q7: 9/10 - Diagram could be more detailed
+Q8: 8/8 - Correct factorization method
+Q9: 6/7 - Small rounding inconsistency
+Q10: 5/5 - Perfect statement of Newton's Second Law
+
+## FOR MICHAEL CHEN (69/100) - AVERAGE STUDENT
+# Copy and paste this into the "Human Graded Marks" field
+
+Q1: 6/10 - Fundamental error with constant derivative
+Q2: 12/15 - Missing constant of integration
+Q3: 6/12 - Equation not balanced, lacks detail
+Q4: 6/8 - Calculation error in squaring
+Q5: 3/10 - Failed to balance oxygen atoms
+Q6: 12/15 - Used g=10 instead of 9.8
+Q7: 7/10 - Confused about atomic number
+Q8: 8/8 - Perfect use of quadratic formula
+Q9: 5/7 - Calculation and rounding errors
+Q10: 4/5 - Informal but essentially correct

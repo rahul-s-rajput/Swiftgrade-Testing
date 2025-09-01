@@ -1,0 +1,125 @@
+{
+  "test_configuration": {
+    "assessment_name": "Mathematics & Science Midterm Examination - Fall 2024",
+    "student_info": {
+      "name": "Sarah Johnson",
+      "id": "2024-0547",
+      "test_date": "2024-11-15"
+    },
+    "questions": [
+      {
+        "question_id": "Q1",
+        "number": 1,
+        "description": "Differentiate f(x) = 3x³ - 2x² + 5x - 7",
+        "max_marks": 10
+      },
+      {
+        "question_id": "Q2",
+        "number": 2,
+        "description": "Solve the integral ∫(2x² + 3x - 1)dx",
+        "max_marks": 15
+      },
+      {
+        "question_id": "Q3",
+        "number": 3,
+        "description": "Explain photosynthesis and write chemical equation",
+        "max_marks": 12
+      },
+      {
+        "question_id": "Q4",
+        "number": 4,
+        "description": "Calculate area of circle with radius r = 7.5 cm",
+        "max_marks": 8
+      },
+      {
+        "question_id": "Q5",
+        "number": 5,
+        "description": "Balance chemical equation Fe + O₂ → Fe₂O₃",
+        "max_marks": 10
+      },
+      {
+        "question_id": "Q6",
+        "number": 6,
+        "description": "Ball thrown upward - find max height and time",
+        "max_marks": 15
+      },
+      {
+        "question_id": "Q7",
+        "number": 7,
+        "description": "Describe atomic structure, atomic number, mass number",
+        "max_marks": 10
+      },
+      {
+        "question_id": "Q8",
+        "number": 8,
+        "description": "Find roots of x² - 5x + 6 = 0",
+        "max_marks": 8
+      },
+      {
+        "question_id": "Q9",
+        "number": 9,
+        "description": "Convert 75°F to Celsius and Kelvin",
+        "max_marks": 7
+      },
+      {
+        "question_id": "Q10",
+        "number": 10,
+        "description": "State Newton's Second Law and mathematical form",
+        "max_marks": 5
+      }
+    ],
+    "human_marks_by_qid": {
+      "Q1": 10.0,
+      "Q2": 14.0,
+      "Q3": 11.0,
+      "Q4": 8.0,
+      "Q5": 10.0,
+      "Q6": 13.0,
+      "Q7": 9.0,
+      "Q8": 8.0,
+      "Q9": 6.0,
+      "Q10": 5.0
+    },
+    "human_feedback": {
+      "Q1": "Perfect application of power rule. All steps shown clearly.",
+      "Q2": "Correct integration method. Minor formatting issue in final answer.",
+      "Q3": "Good explanation. Missing detail about light/dark reactions.",
+      "Q4": "Correct formula used. Accurate calculation with proper units.",
+      "Q5": "Perfectly balanced equation. Systematic approach shown.",
+      "Q6": "Correct equations. Small rounding error in final height.",
+      "Q7": "Comprehensive description. Diagram could be more detailed.",
+      "Q8": "Correct factorization method. Both roots found accurately.",
+      "Q9": "Correct formulas. Small rounding inconsistency in Kelvin.",
+      "Q10": "Perfect statement of Newton's Second Law."
+    },
+    "grading_summary": {
+      "total_score": 94,
+      "total_marks": 100,
+      "percentage": 94,
+      "grade": "A",
+      "grader": "Prof. Michael Thompson",
+      "date_graded": "2024-11-16"
+    },
+    "recommended_ai_models": [
+      "gpt-4-vision-preview",
+      "claude-3-opus-20240229",
+      "gemini-pro-vision",
+      "anthropic/claude-3-haiku-20240307"
+    ],
+    "iterations": 3,
+    "test_images": {
+      "student_pages": [
+        "student_test_page_1.html",
+        "student_test_page_2.html",
+        "student_test_page_3.html",
+        "student_test_page_4.html"
+      ],
+      "answer_key_pages": [
+        "answer_key_page_1.html",
+        "answer_key_page_2.html",
+        "answer_key_page_3.html",
+        "answer_key_page_4.html"
+      ]
+    }
+  }
+}

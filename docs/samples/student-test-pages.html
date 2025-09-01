@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Student Test - Sarah Johnson</title>
+    <style>
+        @page {
+            size: letter;
+            margin: 0.5in;
+        }
+        body {
+            font-family: 'Times New Roman', serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: white;
+        }
+        .page {
+            width: 8.5in;
+            min-height: 11in;
+            padding: 0.5in;
+            margin: 0 auto 20px;
+            background: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            page-break-after: always;
+        }
+        .header {
+            border-bottom: 2px solid #333;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .student-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .title {
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .question {
+            margin: 25px 0;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #ddd;
+        }
+        .question-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+        .student-answer {
+            color: #1a0dab;
+            font-family: 'Arial', sans-serif;
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .handwritten {
+            font-family: 'Comic Sans MS', cursive;
+            color: #0066cc;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+        .math-work {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f9f9f9;
+            border-left: 3px solid #4CAF50;
+        }
+        .diagram {
+            margin: 15px 0;
+            padding: 20px;
+            border: 1px solid #999;
+            background: #fefefe;
+            text-align: center;
+        }
+        .page-number {
+            text-align: center;
+            margin-top: 30px;
+            color: #666;
+        }
+        @media print {
+            .page {
+                box-shadow: none;
+                margin: 0;
+                page-break-after: always;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Page 1 -->
+    <div class="page">
+        <div class="header">
+            <div class="student-info">
+                <span><strong>Name:</strong> Sarah Johnson</span>
+                <span><strong>Student ID:</strong> 2024-0547</span>
+                <span><strong>Date:</strong> November 15, 2024</span>
+            </div>
+            <div class="title">Mathematics & Science Midterm Examination</div>
+            <div style="text-align: center; color: #666;">Time: 2 hours | Total Marks: 100</div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q1. (10 marks) Differentiate the following function: f(x) = 3x³ - 2x² + 5x - 7</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    f(x) = 3x³ - 2x² + 5x - 7<br>
+                    <br>
+                    Using power rule: d/dx(xⁿ) = n·xⁿ⁻¹<br>
+                    <br>
+                    f'(x) = d/dx(3x³) - d/dx(2x²) + d/dx(5x) - d/dx(7)<br>
+                    f'(x) = 3·3x² - 2·2x + 5·1 - 0<br>
+                    f'(x) = 9x² - 4x + 5<br>
+                    <br>
+                    <strong>Answer: f'(x) = 9x² - 4x + 5</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q2. (15 marks) Solve the integral: ∫(2x² + 3x - 1)dx</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    ∫(2x² + 3x - 1)dx<br>
+                    <br>
+                    = ∫2x²dx + ∫3xdx - ∫1dx<br>
+                    <br>
+                    Using ∫xⁿdx = xⁿ⁺¹/(n+1) + C:<br>
+                    <br>
+                    = 2·(x³/3) + 3·(x²/2) - x + C<br>
+                    = (2x³/3) + (3x²/2) - x + C<br>
+                    <br>
+                    <strong>Answer: (2x³/3) + (3x²/2) - x + C</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q3. (12 marks) Explain the concept of photosynthesis and write the chemical equation.</div>
+            <div class="student-answer handwritten">
+                Photosynthesis is the process by which green plants use sunlight to synthesize nutrients from carbon dioxide and water. It occurs in the chloroplasts of plant cells, specifically in the chlorophyll molecules.<br><br>
+                
+                The process converts light energy into chemical energy stored in glucose. Oxygen is released as a byproduct.<br><br>
+                
+                <div class="math-work">
+                    Chemical Equation:<br>
+                    6CO₂ + 6H₂O + light energy → C₆H₁₂O₆ + 6O₂<br>
+                    (carbon dioxide + water + light → glucose + oxygen)
+                </div>
+                
+                This process is essential for life on Earth as it provides oxygen and is the primary source of energy for most ecosystems.
+            </div>
+        </div>
+
+        <div class="page-number">Page 1 of 4</div>
+    </div>
+
+    <!-- Page 2 -->
+    <div class="page">
+        <div class="header">
+            <div class="student-info">
+                <span><strong>Name:</strong> Sarah Johnson</span>
+                <span><strong>Page 2</strong></span>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q4. (8 marks) Calculate the area of a circle with radius r = 7.5 cm</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    Given: r = 7.5 cm<br>
+                    Formula: A = πr²<br>
+                    <br>
+                    A = π × (7.5)²<br>
+                    A = π × 56.25<br>
+                    A = 3.14159 × 56.25<br>
+                    A ≈ 176.71 cm²<br>
+                    <br>
+                    <strong>Answer: Area = 176.71 cm²</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q5. (10 marks) Balance the following chemical equation: Fe + O₂ → Fe₂O₃</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    Unbalanced: Fe + O₂ → Fe₂O₃<br>
+                    <br>
+                    Step 1: Count atoms on each side<br>
+                    Left: Fe = 1, O = 2<br>
+                    Right: Fe = 2, O = 3<br>
+                    <br>
+                    Step 2: Balance Fe first<br>
+                    2Fe + O₂ → Fe₂O₃<br>
+                    <br>
+                    Step 3: Balance O<br>
+                    Need 3 O on left, but O₂ gives 2<br>
+                    Use fractions: 2Fe + (3/2)O₂ → Fe₂O₃<br>
+                    <br>
+                    Step 4: Clear fractions by multiplying by 2<br>
+                    4Fe + 3O₂ → 2Fe₂O₃<br>
+                    <br>
+                    <strong>Answer: 4Fe + 3O₂ → 2Fe₂O₃</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q6. (15 marks) A ball is thrown upward with initial velocity 20 m/s. Find maximum height and time to reach it.</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    Given: v₀ = 20 m/s, g = -9.8 m/s²<br>
+                    At maximum height, v = 0<br>
+                    <br>
+                    Using v = v₀ + gt:<br>
+                    0 = 20 + (-9.8)t<br>
+                    9.8t = 20<br>
+                    t = 20/9.8 ≈ 2.04 seconds<br>
+                    <br>
+                    Using h = v₀t + ½gt²:<br>
+                    h = 20(2.04) + ½(-9.8)(2.04)²<br>
+                    h = 40.8 - ½(9.8)(4.16)<br>
+                    h = 40.8 - 20.4<br>
+                    h ≈ 20.4 meters<br>
+                    <br>
+                    <strong>Answer: Max height = 20.4 m, Time = 2.04 s</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-number">Page 2 of 4</div>
+    </div>
+
+    <!-- Page 3 -->
+    <div class="page">
+        <div class="header">
+            <div class="student-info">
+                <span><strong>Name:</strong> Sarah Johnson</span>
+                <span><strong>Page 3</strong></span>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q7. (10 marks) Describe the structure of an atom and explain atomic number and mass number.</div>
+            <div class="student-answer handwritten">
+                An atom consists of three main particles:<br><br>
+                
+                <strong>1. Nucleus (center):</strong><br>
+                - Contains protons (positive charge)<br>
+                - Contains neutrons (no charge)<br>
+                - Very small but contains most of the atom's mass<br><br>
+                
+                <strong>2. Electrons:</strong><br>
+                - Negative charge<br>
+                - Orbit the nucleus in energy levels/shells<br>
+                - Much lighter than protons and neutrons<br><br>
+                
+                <div class="diagram">
+                    [Simple diagram showing nucleus with p+ and n, and electron shells with e-]
+                </div>
+                
+                <strong>Atomic Number (Z):</strong> Number of protons in the nucleus. This defines the element.<br>
+                Example: Carbon has 6 protons, so Z = 6<br><br>
+                
+                <strong>Mass Number (A):</strong> Total number of protons + neutrons<br>
+                Example: Carbon-12 has 6 protons + 6 neutrons = 12<br>
+                A = Z + N (where N = number of neutrons)
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q8. (8 marks) Find the roots of the quadratic equation: x² - 5x + 6 = 0</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    x² - 5x + 6 = 0<br>
+                    <br>
+                    Method 1: Factoring<br>
+                    Looking for factors of 6 that add to -5<br>
+                    -2 and -3 work: (-2) × (-3) = 6, (-2) + (-3) = -5<br>
+                    <br>
+                    (x - 2)(x - 3) = 0<br>
+                    <br>
+                    So: x - 2 = 0 or x - 3 = 0<br>
+                    x = 2 or x = 3<br>
+                    <br>
+                    Verification:<br>
+                    For x = 2: 4 - 10 + 6 = 0 ✓<br>
+                    For x = 3: 9 - 15 + 6 = 0 ✓<br>
+                    <br>
+                    <strong>Answer: x = 2 or x = 3</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-number">Page 3 of 4</div>
+    </div>
+
+    <!-- Page 4 -->
+    <div class="page">
+        <div class="header">
+            <div class="student-info">
+                <span><strong>Name:</strong> Sarah Johnson</span>
+                <span><strong>Page 4</strong></span>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q9. (7 marks) Convert 75°F to Celsius and Kelvin.</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    Given: T = 75°F<br>
+                    <br>
+                    Formula: °C = (°F - 32) × 5/9<br>
+                    °C = (75 - 32) × 5/9<br>
+                    °C = 43 × 5/9<br>
+                    °C = 215/9<br>
+                    °C ≈ 23.89°C<br>
+                    <br>
+                    For Kelvin: K = °C + 273.15<br>
+                    K = 23.89 + 273.15<br>
+                    K ≈ 297.04 K<br>
+                    <br>
+                    <strong>Answer: 23.89°C or 297.04 K</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q10. (5 marks) State Newton's Second Law of Motion and give its mathematical form.</div>
+            <div class="student-answer handwritten">
+                <strong>Newton's Second Law of Motion:</strong><br><br>
+                
+                "The acceleration of an object is directly proportional to the net force acting on it and inversely proportional to its mass."<br><br>
+                
+                In other words, when a force acts on an object, it causes the object to accelerate. The larger the force, the greater the acceleration. The larger the mass, the smaller the acceleration.<br><br>
+                
+                <div class="math-work">
+                    Mathematical Form:<br>
+                    <strong>F = ma</strong><br>
+                    <br>
+                    Where:<br>
+                    F = Net force (in Newtons, N)<br>
+                    m = Mass (in kilograms, kg)<br>
+                    a = Acceleration (in m/s²)
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 40px; padding: 20px; border: 2px solid #333; text-align: center;">
+            <strong>END OF EXAMINATION</strong><br>
+            Student Signature: <span style="font-family: cursive;">S. Johnson</span><br>
+            Time Submitted: 11:45 AM
+        </div>
+
+        <div class="page-number">Page 4 of 4</div>
+    </div>
+</body>
+</html>

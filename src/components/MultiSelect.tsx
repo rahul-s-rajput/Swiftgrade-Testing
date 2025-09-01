@@ -18,6 +18,7 @@ interface MultiSelectProps {
   onChipMenuRequestAt?: (id: string, index: number, anchorRect: DOMRect) => void;
   shouldShowChipMenuAt?: (id: string, index: number) => boolean;
   maxPerOption?: number;
+  dropdownPlacement?: 'right' | 'bottom';
 }
 
 export const MultiSelect: React.FC<MultiSelectProps> = ({
@@ -36,10 +37,13 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   onChipMenuRequestAt,
   shouldShowChipMenuAt,
   maxPerOption,
+  dropdownPlacement = 'bottom',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [menuMaxHeight, setMenuMaxHeight] = useState<number>(384);
 
   const filteredOptions = options.filter(option =>
     option.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -56,6 +60,27 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Compute available vertical space to prevent dropdown cutoff
+  useEffect(() => {
+    if (!isOpen) return;
+    const computeMaxHeight = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      const padding = 32; // give extra breathing room from the bottom
+      const viewportH = window.innerHeight || document.documentElement.clientHeight;
+      const top = rect ? rect.top : 0;
+      const availableBelow = Math.max(0, viewportH - top - padding);
+      const capped = Math.min(Math.round(viewportH * 0.6), availableBelow);
+      setMenuMaxHeight(capped);
+    };
+    computeMaxHeight();
+    window.addEventListener('resize', computeMaxHeight);
+    window.addEventListener('scroll', computeMaxHeight, true);
+    return () => {
+      window.removeEventListener('resize', computeMaxHeight);
+      window.removeEventListener('scroll', computeMaxHeight, true);
+    };
+  }, [isOpen, dropdownPlacement]);
 
   const toggleOption = (optionId: string) => {
     if (allowDuplicates) {
@@ -84,83 +109,35 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
       </label>
       
       <div className="relative" ref={dropdownRef}>
-        {/* Selected items display */}
-        {selectedValues.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-2">
-            {selectedValues.map((id, idx) => {
-              const option = options.find(o => o.id === id);
-              if (!option) return null;
-              const chipKey = `${id}-${idx}`;
-              const showMenu = typeof shouldShowChipMenuAt === 'function'
-                ? shouldShowChipMenuAt(id, idx)
-                : (shouldShowChipMenu ? shouldShowChipMenu(id) : false);
-              const badgeNode = typeof getChipBadgeAt === 'function'
-                ? getChipBadgeAt(id, idx)
-                : (getChipBadge ? getChipBadge(id) : null);
-              return (
-              <span
-                key={chipKey}
-                className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full"
-              >
-                {option.name}
-                {(() => {
-                  if (!getChipSuffix) return null;
-                  const node = getChipSuffix(option.id);
-                  return node ? (
-                    <span className="ml-1 text-[10px] text-blue-900/70">{node}</span>
-                  ) : null;
-                })()}
-                {badgeNode && (
-                  <span className="ml-1">{badgeNode}</span>
-                )}
-                {(onChipMenuRequestAt || onChipMenuRequest) && showMenu && (
-                  <button
-                    type="button"
-                    aria-label={`Configure ${option.name}`}
-                    onClick={(e) => {
-                      const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                      if (onChipMenuRequestAt) {
-                        onChipMenuRequestAt(id, idx, rect);
-                      } else if (onChipMenuRequest) {
-                        onChipMenuRequest(option.id, rect);
-                      }
-                    }}
-                    className="ml-1 hover:bg-blue-200 rounded-full p-0.5"
-                  >
-                    <MoreVertical className="w-3 h-3" />
-                  </button>
-                )}
-                <button
-                  onClick={() => removeOptionAt(idx)}
-                  className="ml-1 hover:bg-blue-200 rounded-full p-0.5"
-                >
-                  <X className="w-3 h-3" />
-                </button>
+
+        {/* Trigger + Dropdown positioned together */}
+        <div className="relative">
+          {/* Dropdown trigger */}
+          <button
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            ref={triggerRef}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-gray-500">
+                {selectedValues.length > 0 
+                  ? `${selectedValues.length} model${selectedValues.length !== 1 ? 's' : ''} selected`
+                  : placeholder
+                }
               </span>
-              );
-            })}
-          </div>
-        )}
+              <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </div>
+          </button>
 
-        {/* Dropdown trigger */}
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-gray-500">
-              {selectedValues.length > 0 
-                ? `${selectedValues.length} model${selectedValues.length !== 1 ? 's' : ''} selected`
-                : placeholder
-              }
-            </span>
-            <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-          </div>
-        </button>
-
-        {/* Dropdown menu */}
-        {isOpen && (
-          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-hidden">
+          {/* Dropdown menu */}
+          {isOpen && (
+            <div
+              className={dropdownPlacement === 'right'
+                ? "absolute z-50 w-96 left-full top-0 ml-2 bg-white border border-gray-300 rounded-lg shadow-lg overflow-hidden"
+                : "absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg overflow-hidden"}
+              style={{ maxHeight: menuMaxHeight }}
+            >
             {/* Search input */}
             <div className="p-2 border-b border-gray-200">
               <div className="relative">
@@ -170,18 +147,23 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                   placeholder="Search models..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); } }}
                   className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             </div>
 
             {/* Options list */}
-            <div className="max-h-40 overflow-y-auto">
+            <div
+              className="overflow-y-auto"
+              style={{ maxHeight: Math.max(0, menuMaxHeight - 56) }}
+            >
               {filteredOptions.map(option => {
                 const count = selectedValues.filter(id => id === option.id).length;
                 const atMax = allowDuplicates && typeof maxPerOption === 'number' && count >= maxPerOption;
                 return (
                   <button
+                    type="button"
                     key={option.id}
                     onClick={() => toggleOption(option.id)}
                     disabled={atMax}
@@ -210,9 +192,69 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                 </div>
               )}
             </div>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Selected items display BELOW dropdown */}
+      {selectedValues.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-2">
+          {selectedValues.map((id, idx) => {
+            const option = options.find(o => o.id === id);
+            if (!option) return null;
+            const chipKey = `${id}-${idx}`;
+            const showMenu = typeof shouldShowChipMenuAt === 'function'
+              ? shouldShowChipMenuAt(id, idx)
+              : (shouldShowChipMenu ? shouldShowChipMenu(id) : false);
+            const badgeNode = typeof getChipBadgeAt === 'function'
+              ? getChipBadgeAt(id, idx)
+              : (getChipBadge ? getChipBadge(id) : null);
+            return (
+            <span
+              key={chipKey}
+              className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full"
+            >
+              {option.name}
+              {(() => {
+                if (!getChipSuffix) return null;
+                const node = getChipSuffix(option.id);
+                return node ? (
+                  <span className="ml-1 text-[10px] text-blue-900/70">{node}</span>
+                ) : null;
+              })()}
+              {badgeNode && (
+                <span className="ml-1">{badgeNode}</span>
+              )}
+              {(onChipMenuRequestAt || onChipMenuRequest) && showMenu && (
+                <button
+                  type="button"
+                  aria-label={`Configure ${option.name}`}
+                  onClick={(e) => {
+                    const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                    if (onChipMenuRequestAt) {
+                      onChipMenuRequestAt(id, idx, rect);
+                    } else if (onChipMenuRequest) {
+                      onChipMenuRequest(option.id, rect);
+                    }
+                  }}
+                  className="ml-1 hover:bg-blue-200 rounded-full p-0.5"
+                >
+                  <MoreVertical className="w-3 h-3" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => removeOptionAt(idx)}
+                className="ml-1 hover:bg-blue-200 rounded-full p-0.5"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

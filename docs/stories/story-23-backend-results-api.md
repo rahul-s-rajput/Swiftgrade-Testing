@@ -79,3 +79,23 @@ GET `/results/{session_id}`
 
 ## Frontend Alignment
 - Use this endpoint to render per-question panels and per-model try chips.
+
+## Status
+Completed on 2025-08-28 (PT). Endpoint implemented and wired into FastAPI. End-to-end verification will occur after frontend integration.
+
+## Completed Tasks
+- Implemented `GET /results/{session_id}` in `app/routers/results.py`.
+- Added response models in `app/schemas.py` (`ResultItem`, `ResultsRes`).
+- Wired router in `app/main.py` via `app.include_router(results_router.router)`.
+
+## Implementation Notes
+- Reads `public.result` filtered by `session_id` and selects `question_id, model_name, try_index, marks_awarded, rubric_notes`.
+- Groups into `results_by_question[question_id][model_name] = [ResultItem...]`.
+- Sorted by `try_index` ascending.
+- Rows with `question_id = "__parse_error__"` (parse failures) are omitted, so models with no successes may be omitted entirely for that question (consistent with Acceptance Criteria).
+- No additional environment variables required.
+
+## Testing Notes
+- Full testing will be performed after frontend integration (Story 26). For backend-only smoke test:
+  - Ensure grading results exist in `public.result` for a session.
+  - Call `GET /results/{session_id}` and verify grouping and sorting.

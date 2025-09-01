@@ -1,0 +1,100 @@
+# Human Marked Grades for Student: Sarah Johnson
+# Student ID: 2024-0547
+# Test Date: November 15, 2024
+# Graded by: Prof. Michael Thompson
+
+## DETAILED MARKING SHEET
+
+Q1: 10/10
+- Perfect application of power rule
+- All steps shown clearly
+- Correct final answer
+- Excellent presentation
+
+Q2: 14/15  
+- Correct integration method
+- Minor formatting issue in final answer (should show common denominator)
+- Otherwise perfect work
+- Clear step-by-step solution
+
+Q3: 11/12
+- Good explanation of photosynthesis process
+- Correct chemical equation
+- Missing detail about light/dark reactions
+- Well-structured answer
+
+Q4: 8/8
+- Correct formula used
+- Accurate calculation
+- Proper units included
+- Clear working shown
+
+Q5: 10/10
+- Perfectly balanced equation
+- Systematic approach shown
+- Verification included
+- Excellent method
+
+Q6: 13/15
+- Correct equations used
+- Small rounding error in final height (should be 20.41 m)
+- Time calculation perfect
+- Good problem-solving approach
+
+Q7: 9/10
+- Comprehensive description of atomic structure
+- Clear definitions of atomic and mass numbers
+- Diagram could be more detailed
+- Good use of examples
+
+Q8: 8/8
+- Correct factorization method
+- Both roots found accurately
+- Verification included (bonus!)
+- Clean presentation
+
+Q9: 6/7
+- Correct conversion formulas
+- Small rounding inconsistency in Kelvin (should be 297.04 K)
+- Clear working shown
+- Units properly stated
+
+Q10: 5/5
+- Perfect statement of Newton's Second Law
+- Correct mathematical form
+- All variables defined
+- Concise and accurate
+
+## SUMMARY STATISTICS
+
+Total Score: 94/100
+Percentage: 94%
+Grade: A
+
+## OVERALL FEEDBACK
+
+Strengths:
+- Excellent mathematical reasoning and problem-solving skills
+- Clear presentation and systematic approach
+- Strong understanding of fundamental concepts
+- Good attention to showing working
+
+Areas for Improvement:
+- Watch rounding consistency in multi-step calculations
+- Include more detail in descriptive answers (e.g., Q3, Q7)
+- Consider using common denominators in final answers when appropriate
+
+## QUESTION-BY-QUESTION PERFORMANCE
+
+Mathematics Questions (Q1, Q2, Q4, Q6, Q8, Q9): 56/60 (93.3%)
+Science Questions (Q3, Q5, Q7, Q10): 38/40 (95%)
+
+Difficulty Analysis:
+- Easy Questions: 36/38 (94.7%)
+- Medium Questions: 33/37 (89.2%)
+- Hard Questions: 13/15 (86.7%)
+
+Time Management: Good (submitted 15 minutes before deadline)
+
+Examiner's Signature: M. Thompson
+Date Graded: November 16, 2024

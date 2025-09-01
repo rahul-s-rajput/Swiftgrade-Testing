@@ -1,8 +1,42 @@
 import os
+import re
+import unicodedata
 from uuid import uuid4
+from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, status
 from ..schemas import ImageRegisterReq, SignedUrlReq, SignedUrlRes
 from ..supabase_client import supabase
+
+def _sanitize_filename(name: str) -> str:
+    """Create a storage-safe filename.
+    - Normalize unicode, ASCII-only
+    - Replace spaces with '-'
+    - Allow only [A-Za-z0-9._-]
+    - Collapse duplicate dashes
+    - Preserve extension
+    - Avoid leading dot and empty names
+    """
+    if not isinstance(name, str):
+        name = "file"
+    base, ext = os.path.splitext(name)
+    # Normalize and ASCII fold
+    base = unicodedata.normalize("NFKD", base).encode("ascii", "ignore").decode("ascii")
+    ext = unicodedata.normalize("NFKD", ext).encode("ascii", "ignore").decode("ascii")
+    # Replace spaces, remove disallowed chars
+    base = base.replace(" ", "-")
+    base = re.sub(r"[^A-Za-z0-9._-]", "-", base)
+    base = re.sub(r"-+", "-", base).strip("-._")
+    if not base:
+        base = f"file-{uuid4().hex[:8]}"
+    # Avoid hidden file
+    if base.startswith('.'):
+        base = base.lstrip('.') or f"file-{uuid4().hex[:8]}"
+    # Lowercase extension for consistency
+    ext = ext.lower()
+    # Ensure ext is safe
+    if not re.fullmatch(r"\.[A-Za-z0-9]+", ext or ""):
+        ext = ""
+    return base + ext
 
 router = APIRouter()
 
@@ -98,8 +132,10 @@ def _get_env_bucket() -> str:
 
 
 def _extract(obj, *keys):
-    # Try nested dicts or objects with .data
-    if hasattr(obj, "data"):
+    # Try nested dicts or objects with .data (supabase-py often returns {'data': {...}})
+    if isinstance(obj, dict) and "data" in obj and isinstance(obj["data"], dict):
+        obj = obj["data"]
+    elif hasattr(obj, "data"):
         obj = getattr(obj, "data")
     if not isinstance(obj, dict):
         return None
@@ -118,8 +154,10 @@ def create_signed_upload_url(payload: SignedUrlReq) -> SignedUrlRes:
 
     bucket = _get_env_bucket()
 
+    # Sanitize filename to avoid spaces/special chars and ensure provider compatibility
+    safe_name = _sanitize_filename(payload.filename)
     # Unique path per upload to avoid collisions; organize by random UUID segment
-    path = f"{uuid4().hex}/{payload.filename}"
+    path = f"{uuid4().hex}/{safe_name}"
 
     try:
         resp = supabase.storage.from_(bucket).create_signed_upload_url(path)
@@ -147,6 +185,15 @@ def create_signed_upload_url(payload: SignedUrlReq) -> SignedUrlRes:
         public_url = _extract(pub_resp, "publicUrl", "public_url", "signedUrl", "url")
     except Exception:
         public_url = None
+
+    # Fallback: deterministically build public URL if bucket is configured public
+    if not public_url:
+        base = os.getenv("SUPABASE_URL")
+        if base:
+            # This URL form works only when the bucket is public
+            # Ensure the path is URL-encoded for providers that fail on spaces/parentheses
+            encoded_path = quote(path, safe="/")
+            public_url = f"{base}/storage/v1/object/public/{bucket}/{encoded_path}"
 
     if not signed_url and not token:
         raise HTTPException(status_code=500, detail="Supabase did not return a signed upload URL or token")

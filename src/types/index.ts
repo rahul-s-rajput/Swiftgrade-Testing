@@ -1,20 +1,29 @@
+export type ReasoningLevel = 'none' | 'low' | 'medium' | 'high' | 'custom';
+
+export interface ReasoningConfig {
+  level: ReasoningLevel;
+  tokens?: number;
+}
+
 export interface Assessment {
   id: string;
   name: string;
   date: string;
-  status: 'running' | 'complete';
+  status: 'running' | 'complete' | 'failed';
   studentImages: File[];
   answerKeyImages: File[];
   questions: string;
   humanGrades: string;
   selectedModels: string[];
   iterations: number;
+  reasoningBySelection?: ReasoningConfig[];
   results?: AssessmentResults;
 }
 
 export interface AssessmentResults {
   modelResults: ModelResult[];
   questions: Question[];
+  totalMaxMarks: number;
 }
 
 export interface ModelResult {
@@ -41,6 +50,12 @@ export interface Attempt {
   rangeQuestionDiscrepancies: number;
   totalScore: number;
   questionFeedback: QuestionFeedback[];
+  // New: lists of question numbers (e.g., [1, 3, 7]) for each discrepancy type
+  lt100Questions?: number[];
+  zpfQuestions?: number[];
+  rangeQuestions?: number[];
+  // New: failure reasons when a model attempt failed to parse/validate
+  failureReasons?: string[];
 }
 
 export interface QuestionFeedback {

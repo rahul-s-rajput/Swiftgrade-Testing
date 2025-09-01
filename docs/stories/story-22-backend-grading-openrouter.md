@@ -92,7 +92,7 @@ async def grade_with_model(
   - `Authorization: Bearer <OPENROUTER_API_KEY>`
   - `HTTP-Referer: <your_app_url>` (optional for local use)
   - `X-Title: <your_app_name>` (optional for local use)
-- Body (example, image grading with URL or base64):
+- Body (example, image grading with Supabase Storage URLs only):
 ```json
 {
   "model": "openai/gpt-4o",  // Always use full model name format
@@ -100,10 +100,8 @@ async def grade_with_model(
     { "role": "system", "content": "You are a strict grader. Output valid JSON only..." },
     { "role": "user", "content": [
         { "type": "text", "text": "Grade the student's answers against the answer key." },
-        // Option 1: URL-based images
-        { "type": "image_url", "image_url": { "url": "https://.../student-1.png" } },
-        // Option 2: Base64-encoded images (useful for local files)
-        { "type": "image_url", "image_url": { "url": "data:image/png;base64,iVBORw0..." } },
+        // URL-based images hosted in Supabase Storage (public or signed URLs)
+        { "type": "image_url", "image_url": { "url": "https://<project>.supabase.co/storage/v1/object/public/grading-images/<path>/student-1.png" } },
         { "type": "text", "text": "Questions: Q1 (max 10), Q2 (max 5)..." }
       ] }
   ],
@@ -111,10 +109,11 @@ async def grade_with_model(
   "provider": {
     "order": ["openai"],  // Single provider for local use
     "allow_fallbacks": false  // Disable for predictable local testing
-  }
+  },
+  // Optional: Reasoning configuration for models that support it (e.g., OpenAI o3-series)
+  "reasoning": { "effort": "medium" }
 }
 ```
-- For local single-user: Base64 encoding may be simpler than managing signed URLs
 - Model names must use exact OpenRouter format: `provider/model-name`
 
 ## Iterations Mapping
@@ -150,10 +149,41 @@ create index if not exists idx_result_session on public.result(session_id);
 - At least one successful parsed result per model×try is stored or a validation error is recorded.
 - Session status transitions to `graded` or `failed` appropriately.
 - Handle 429 rate limits with exponential backoff
-- Support both URL and base64 image inputs
+- Images are provided via Supabase Storage URLs (public or signed); base64 inputs are not used
 
 ## Notes
-- For local single-user: Consider using base64 for simpler setup without storage buckets
-- Model names must use exact format from OpenRouter (e.g., "openai/gpt-4o", not "gpt-4o")
-- Implement proper error handling for 429 (rate limit) and 5xx errors
+- Use Supabase Storage for hosting images referenced in prompts. Prefer public buckets for simplicity during prototyping or generate signed URLs.
+- Model names must use exact format from OpenRouter (e.g., "openai/gpt-4o", not "gpt-4o").
+- Implement proper error handling for 429 (rate limit) and 5xx errors.
+
+
+## Status
+Completed on 2025-08-28 (PT). Backend implementation finished and wired into FastAPI. End-to-end testing is deferred until frontend integration in a later story.
+
+## Completed Tasks
+- Implemented `POST /grade/single` in `app/routers/grade.py` with:
+  - Async `httpx` calls, bounded concurrency via `asyncio.Semaphore`.
+  - Retries with exponential backoff for 429/5xx.
+  - URL-only images (Supabase Storage URLs) in `messages[].content[]` — base64 not used.
+  - Optional OpenRouter `reasoning` parameter passed at top-level when provided.
+  - Session status transitions: `grading` → `graded`/`failed`.
+  - Persistence into `public.result` with conflict on `(session_id, question_id, model_name, try_index)`.
+- Added schemas in `app/schemas.py`:
+  - `GradeModelSpec`, `GradeSingleReq` (with optional `reasoning`), `GradeSingleRes`.
+- Wired router in `app/main.py` via `app.include_router(grade_router.router)`.
+- Documented OpenRouter request spec to use Supabase URLs only and where to set `reasoning`.
+
+## Implementation Notes
+- Endpoint: `POST /grade/single` in `app/routers/grade.py`.
+- OpenRouter call: `POST {OPENROUTER_BASE_URL}/chat/completions` with headers `Authorization: Bearer <OPENROUTER_API_KEY>` and JSON body `{ model, messages, provider.allow_fallbacks=false, reasoning? }`.
+- Messages are built from `public.image` (roles: `student`, optional `answer_key`) and `public.question` metadata; images are referenced by URL only.
+- Results persisted to `public.result` with `raw_output` and `validation_errors` if parsing fails.
+- Env vars in `.env`: `OPENROUTER_API_KEY`, optional `OPENROUTER_BASE_URL`, `GRADING_MAX_CONCURRENCY`.
+- Supabase client in `app/supabase_client.py` is used for data access.
+
+## Testing Notes
+- End-to-end testing will be performed after frontend integration (Story 26). Until then, backend smoke tests are optional and deferred. When testing:
+  - Ensure images are uploaded to Supabase Storage and registered via `POST /images/register`.
+  - Ensure questions and `human_marks_by_qid` are configured via `POST /questions/config`.
+  - Call `POST /grade/single` with models and optional `reasoning`; verify `public.result` rows.
 

@@ -8,6 +8,8 @@ interface LayoutProps {
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
+  const isReview = location.pathname.includes('/review');
+  const isNewAssessment = location.pathname.includes('/new-assessment');
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/40">
@@ -27,28 +29,29 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               </div>
             </Link>
             
-            {/* Breadcrumb */}
-            <div className="hidden sm:flex items-center space-x-2 text-sm text-slate-600">
-              <Link to="/" className="hover:text-blue-600 transition-colors">Dashboard</Link>
-              {location.pathname.includes('/new-assessment') && (
-                <>
-                  <span className="text-slate-400">/</span>
-                  <span className="text-slate-900 font-medium">New Assessment</span>
-                </>
-              )}
-              {location.pathname.includes('/review') && (
-                <>
-                  <span className="text-slate-400">/</span>
-                  <span className="text-slate-900 font-medium">Review Results</span>
-                </>
-              )}
+            <div className="flex items-center gap-3">
+              {/* Home Button */}
+              <Link
+                to="/"
+                className="inline-flex items-center px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
+                Home
+              </Link>
+
+              {/* Settings */}
+              <Link
+                to="/settings"
+                className="inline-flex items-center px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
+                Settings
+              </Link>
             </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className={(isReview || isNewAssessment) ? "w-full px-4 sm:px-6 lg:px-8 py-8" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"}>
         {children}
       </main>
     </div>

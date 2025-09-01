@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Student Test - Michael Chen</title>
+    <style>
+        @page {
+            size: letter;
+            margin: 0.5in;
+        }
+        body {
+            font-family: 'Times New Roman', serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: white;
+        }
+        .page {
+            width: 8.5in;
+            min-height: 11in;
+            padding: 0.5in;
+            margin: 0 auto 20px;
+            background: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            page-break-after: always;
+        }
+        .header {
+            border-bottom: 2px solid #333;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .student-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .title {
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .question {
+            margin: 25px 0;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #ddd;
+        }
+        .question-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+        .student-answer {
+            color: #1a0dab;
+            font-family: 'Arial', sans-serif;
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .handwritten {
+            font-family: 'Comic Sans MS', cursive;
+            color: #0066cc;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+        .math-work {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f9f9f9;
+            border-left: 3px solid #4CAF50;
+        }
+        .incorrect {
+            color: #d9534f;
+            text-decoration: line-through;
+        }
+        .messy {
+            opacity: 0.7;
+            font-style: italic;
+        }
+        .crossed-out {
+            text-decoration: line-through;
+            opacity: 0.5;
+        }
+        .page-number {
+            text-align: center;
+            margin-top: 30px;
+            color: #666;
+        }
+        @media print {
+            .page {
+                box-shadow: none;
+                margin: 0;
+                page-break-after: always;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Page 1 -->
+    <div class="page">
+        <div class="header">
+            <div class="student-info">
+                <span><strong>Name:</strong> Michael Chen</span>
+                <span><strong>Student ID:</strong> 2024-0892</span>
+                <span><strong>Date:</strong> November 15, 2024</span>
+            </div>
+            <div class="title">Mathematics & Science Midterm Examination</div>
+            <div style="text-align: center; color: #666;">Time: 2 hours | Total Marks: 100</div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q1. (10 marks) Differentiate the following function: f(x) = 3x³ - 2x² + 5x - 7</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    f(x) = 3x³ - 2x² + 5x - 7<br>
+                    <br>
+                    <span class="crossed-out">f'(x) = 3x² - 2x + 5</span><br>
+                    Wait, using power rule:<br>
+                    f'(x) = 3·3x² - 2·2x + 5 - <span class="incorrect">7</span><br>
+                    f'(x) = 9x² - 4x + 5 <span class="incorrect">- 7</span><br>
+                    f'(x) = 9x² - 4x <span class="incorrect">- 2</span><br>
+                    <br>
+                    <strong>Answer: f'(x) = 9x² - 4x - 2</strong> <span style="color: red;">[WRONG]</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q2. (15 marks) Solve the integral: ∫(2x² + 3x - 1)dx</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    ∫(2x² + 3x - 1)dx<br>
+                    <br>
+                    = ∫2x²dx + ∫3xdx - ∫1dx<br>
+                    <br>
+                    = 2·(x³/3) + 3·(x²/2) - x<br>
+                    = (2x³/3) + (3x²/2) - x<br>
+                    <span class="messy">(forgot constant of integration)</span><br>
+                    <br>
+                    <strong>Answer: (2x³/3) + (3x²/2) - x</strong> <span style="color: orange;">[Missing +C]</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q3. (12 marks) Explain the concept of photosynthesis and write the chemical equation.</div>
+            <div class="student-answer handwritten">
+                Photosynthesis is when plants make food using sunlight. They take in carbon dioxide and water to make sugar.<br><br>
+                
+                <div class="math-work">
+                    Chemical Equation:<br>
+                    CO₂ + H₂O → <span class="incorrect">C₆H₁₂O₆ + O₂</span><br>
+                    <span class="messy">(not balanced)</span><br>
+                </div>
+                
+                Plants do this in their leaves where they have green stuff called chlorophyll. The process needs light to work.
+            </div>
+        </div>
+
+        <div class="page-number">Page 1 of 4</div>
+    </div>
+
+    <!-- Page 2 -->
+    <div class="page">
+        <div class="header">
+            <div class="student-info">
+                <span><strong>Name:</strong> Michael Chen</span>
+                <span><strong>Page 2</strong></span>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q4. (8 marks) Calculate the area of a circle with radius r = 7.5 cm</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    Given: r = 7.5 cm<br>
+                    Formula: A = πr²<br>
+                    <br>
+                    <span class="crossed-out">A = 2πr</span> NO, that's circumference<br>
+                    A = π × (7.5)²<br>
+                    A = 3.14 × <span class="incorrect">57.25</span><br>
+                    A = <span class="incorrect">179.77</span> cm²<br>
+                    <br>
+                    <strong>Answer: Area = 179.77 cm²</strong> <span style="color: orange;">[Calculation error]</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q5. (10 marks) Balance the following chemical equation: Fe + O₂ → Fe₂O₃</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    Fe + O₂ → Fe₂O₃<br>
+                    <br>
+                    Need 2 Fe on left: 2Fe + O₂ → Fe₂O₃<br>
+                    Need 3 O on left but have 2...<br>
+                    <span class="messy">Hmm, this is hard</span><br>
+                    <br>
+                    Try: 2Fe + <span class="incorrect">2O₂</span> → Fe₂O₃<br>
+                    No wait, that's 4 O on left and 3 on right<br>
+                    <br>
+                    <strong>Answer: 2Fe + O₂ → Fe₂O₃</strong> <span style="color: red;">[Not balanced]</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q6. (15 marks) A ball is thrown upward with initial velocity 20 m/s. Find maximum height and time to reach it.</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    Given: v₀ = 20 m/s, g = <span class="incorrect">10</span> m/s²<br>
+                    <br>
+                    At max height, v = 0<br>
+                    v = v₀ - gt<br>
+                    0 = 20 - 10t<br>
+                    t = 2 seconds<br>
+                    <br>
+                    Height = v₀t - ½gt²<br>
+                    h = 20(2) - ½(10)(4)<br>
+                    h = 40 - 20 = 20 meters<br>
+                    <br>
+                    <strong>Answer: Height = 20 m, Time = 2 s</strong> <span style="color: orange;">[Used g=10 instead of 9.8]</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-number">Page 2 of 4</div>
+    </div>
+
+    <!-- Page 3 -->
+    <div class="page">
+        <div class="header">
+            <div class="student-info">
+                <span><strong>Name:</strong> Michael Chen</span>
+                <span><strong>Page 3</strong></span>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q7. (10 marks) Describe the structure of an atom and explain atomic number and mass number.</div>
+            <div class="student-answer handwritten">
+                An atom has:<br>
+                - A nucleus in the middle with protons and neutrons<br>
+                - Electrons going around the nucleus<br><br>
+                
+                Protons are positive, electrons are negative, neutrons have no charge.<br><br>
+                
+                <strong>Atomic Number:</strong> The number of <span class="incorrect">electrons</span> protons in an atom<br>
+                <strong>Mass Number:</strong> The weight of the atom <span class="messy">(I think it's protons + neutrons?)</span><br><br>
+                
+                Example: Hydrogen has 1 proton so atomic number = 1
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q8. (8 marks) Find the roots of the quadratic equation: x² - 5x + 6 = 0</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    x² - 5x + 6 = 0<br>
+                    <br>
+                    Using quadratic formula:<br>
+                    x = [-b ± √(b² - 4ac)] / 2a<br>
+                    <br>
+                    a = 1, b = -5, c = 6<br>
+                    x = [5 ± √(25 - 24)] / 2<br>
+                    x = [5 ± √1] / 2<br>
+                    x = [5 ± 1] / 2<br>
+                    <br>
+                    x = 6/2 = 3 or x = 4/2 = 2<br>
+                    <br>
+                    <strong>Answer: x = 2 or x = 3</strong> <span style="color: green;">[Correct!]</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-number">Page 3 of 4</div>
+    </div>
+
+    <!-- Page 4 -->
+    <div class="page">
+        <div class="header">
+            <div class="student-info">
+                <span><strong>Name:</strong> Michael Chen</span>
+                <span><strong>Page 4</strong></span>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q9. (7 marks) Convert 75°F to Celsius and Kelvin.</div>
+            <div class="student-answer handwritten">
+                <div class="math-work">
+                    Given: T = 75°F<br>
+                    <br>
+                    Formula: °C = (°F - 32) × 5/9<br>
+                    °C = (75 - 32) × 5/9<br>
+                    °C = 43 × 5/9<br>
+                    °C = <span class="incorrect">215/9 = 24</span>°C<br>
+                    <br>
+                    For Kelvin: K = °C + 273<br>
+                    K = 24 + 273 = 297 K<br>
+                    <br>
+                    <strong>Answer: 24°C or 297 K</strong> <span style="color: orange;">[Rounding errors]</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="question">
+            <div class="question-header">Q10. (5 marks) State Newton's Second Law of Motion and give its mathematical form.</div>
+            <div class="student-answer handwritten">
+                <strong>Newton's Second Law:</strong><br>
+                Force equals mass times acceleration.<br><br>
+                
+                <div class="math-work">
+                    <strong>F = ma</strong><br>
+                    <br>
+                    F = Force<br>
+                    m = mass<br>
+                    a = acceleration
+                </div>
+                
+                <span class="messy">This means heavier things need more force to move them.</span>
+            </div>
+        </div>
+
+        <div style="margin-top: 40px; padding: 20px; border: 2px solid #333; text-align: center;">
+            <strong>END OF EXAMINATION</strong><br>
+            Student Signature: <span style="font-family: cursive;">M. Chen</span><br>
+            Time Submitted: 11:58 AM <span style="color: red;">(rushed - 2 min before deadline)</span>
+        </div>
+
+        <div class="page-number">Page 4 of 4</div>
+    </div>
+</body>
+</html>

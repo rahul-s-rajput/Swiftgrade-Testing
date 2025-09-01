@@ -1,10 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Loader2, CheckCircle, Trash2, Eye, Calendar, Cpu, RotateCcw } from 'lucide-react';
+import { Plus, Loader2, CheckCircle, Trash2, Eye, Calendar, Cpu, RotateCcw, AlertTriangle } from 'lucide-react';
 import { useAssessments } from '../context/AssessmentContext';
 
 export const Home: React.FC = () => {
-  const { assessments, deleteAssessment } = useAssessments();
+  const { assessments, deleteAssessment, refreshSessions, retryAssessment, loading } = useAssessments();
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -13,6 +13,28 @@ export const Home: React.FC = () => {
       deleteAssessment(id);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="space-y-8 animate-pulse">
+        <div className="h-10 w-64 bg-slate-200 rounded-lg" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[0,1,2].map(i => (
+            <div key={i} className="bg-white/70 rounded-2xl p-6 shadow-lg border border-white/50">
+              <div className="h-6 w-32 bg-slate-200 rounded mb-4" />
+              <div className="h-8 w-20 bg-slate-200 rounded" />
+            </div>
+          ))}
+        </div>
+        <div className="bg-white/70 shadow-xl rounded-2xl border border-white/50 p-8 flex items-center justify-center">
+          <div className="flex items-center text-slate-600">
+            <Loader2 className="w-6 h-6 animate-spin mr-3" />
+            <span className="font-medium">Loading assessments…</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (assessments.length === 0) {
     return (
@@ -47,58 +69,26 @@ export const Home: React.FC = () => {
             Monitor your AI grading tests and analyze performance results
           </p>
         </div>
-        <Link
-          to="/new-assessment"
-          className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          New Assessment
-        </Link>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/50">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-600 text-sm font-medium">Total Assessments</p>
-              <p className="text-3xl font-bold text-slate-900">{assessments.length}</p>
-            </div>
-            <div className="p-3 bg-blue-100 rounded-xl">
-              <Cpu className="w-6 h-6 text-blue-600" />
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/50">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-600 text-sm font-medium">Completed</p>
-              <p className="text-3xl font-bold text-green-600">
-                {assessments.filter(a => a.status === 'complete').length}
-              </p>
-            </div>
-            <div className="p-3 bg-green-100 rounded-xl">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-white/50">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-slate-600 text-sm font-medium">In Progress</p>
-              <p className="text-3xl font-bold text-amber-600">
-                {assessments.filter(a => a.status === 'running').length}
-              </p>
-            </div>
-            <div className="p-3 bg-amber-100 rounded-xl">
-              <RotateCcw className="w-6 h-6 text-amber-600" />
-            </div>
-          </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => void refreshSessions()}
+            className="inline-flex items-center px-4 py-3 bg-slate-100 text-slate-800 font-medium rounded-xl hover:bg-slate-200 transition-colors border border-slate-200"
+            title="Refresh Sessions"
+          >
+            <RotateCcw className="w-5 h-5 mr-2" />
+            Refresh
+          </button>
+          <Link
+            to="/new-assessment"
+            className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            New Assessment
+          </Link>
         </div>
       </div>
 
+      
       {/* Assessments Table */}
       <div className="bg-white/70 backdrop-blur-sm shadow-xl rounded-2xl overflow-hidden border border-white/50">
         <div className="overflow-x-auto">
@@ -158,15 +148,22 @@ export const Home: React.FC = () => {
                   </td>
                   <td className="px-6 py-6">
                     <div className="flex items-center">
-                      {assessment.status === 'running' ? (
+                      {assessment.status === 'running' && (
                         <div className="flex items-center px-3 py-1 bg-amber-100 text-amber-800 rounded-full">
                           <Loader2 className="w-4 h-4 animate-spin mr-2" />
                           <span className="text-sm font-medium">Processing</span>
                         </div>
-                      ) : (
+                      )}
+                      {assessment.status === 'complete' && (
                         <div className="flex items-center px-3 py-1 bg-green-100 text-green-800 rounded-full">
                           <CheckCircle className="w-4 h-4 mr-2" />
                           <span className="text-sm font-medium">Complete</span>
+                        </div>
+                      )}
+                      {assessment.status === 'failed' && (
+                        <div className="flex items-center px-3 py-1 bg-red-100 text-red-800 rounded-full">
+                          <AlertTriangle className="w-4 h-4 mr-2" />
+                          <span className="text-sm font-medium">Failed</span>
                         </div>
                       )}
                     </div>
@@ -181,6 +178,15 @@ export const Home: React.FC = () => {
                         >
                           <Eye className="w-5 h-5" />
                         </Link>
+                      )}
+                      {assessment.status === 'failed' && (
+                        <button
+                          onClick={() => void retryAssessment(assessment.id)}
+                          className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Retry Grading"
+                        >
+                          <RotateCcw className="w-5 h-5" />
+                        </button>
                       )}
                       <button
                         onClick={(e) => handleDelete(assessment.id, e)}

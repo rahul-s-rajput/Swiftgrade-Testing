@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status
-from typing import Dict, Set
+from typing import Dict, Set, List, Any
 
-from ..schemas import QuestionConfigReq, OkRes
+from ..schemas import QuestionConfigReq, OkRes, QuestionsRes, QuestionConfigQuestion
 from ..supabase_client import supabase
 
 
@@ -17,6 +17,49 @@ def _bad_request(message: str, code: str = "VALIDATION_ERROR", details: dict | N
     return ex
 
 
+def _normalize_questions(questions: List[Dict[str, Any]]) -> List[QuestionConfigQuestion]:
+    """
+    Normalize questions to always have a number field.
+    If questions don't have numbers, auto-generate them from array index (1-indexed).
+    """
+    normalized = []
+    
+    # Check if any question has a number field
+    has_numbers = any('number' in q for q in questions)
+    
+    if has_numbers:
+        # Some questions have numbers - validate they all do and are unique
+        seen_numbers = set()
+        for q in questions:
+            if 'number' not in q:
+                raise _bad_request(
+                    "Mixed format: if any question has a 'number' field, all must have it",
+                    details={"question_id": q.get('question_id')}
+                )
+            number = q['number']
+            if number in seen_numbers:
+                raise _bad_request(
+                    "Duplicate number in questions",
+                    details={"number": number}
+                )
+            seen_numbers.add(number)
+            normalized.append(QuestionConfigQuestion(
+                question_id=q['question_id'],
+                number=number,
+                max_marks=q['max_marks']
+            ))
+    else:
+        # No questions have numbers - auto-generate from array index
+        for idx, q in enumerate(questions, start=1):
+            normalized.append(QuestionConfigQuestion(
+                question_id=q['question_id'],
+                number=idx,
+                max_marks=q['max_marks']
+            ))
+    
+    return normalized
+
+
 @router.post("/questions/config", response_model=OkRes)
 def set_questions_config(payload: QuestionConfigReq) -> OkRes:
     # Validate session exists
@@ -24,23 +67,20 @@ def set_questions_config(payload: QuestionConfigReq) -> OkRes:
     if not s.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session_id not found")
 
-    # Validate uniqueness of question_id and number
+    # Normalize questions to ensure all have numbers
+    normalized_questions = _normalize_questions(payload.questions)
+    
+    # Validate uniqueness of question_id
     seen_qids: Set[str] = set()
-    seen_numbers: Set[int] = set()
     question_info: Dict[str, float] = {}
-    for q in payload.questions:
+    
+    for q in normalized_questions:
         if q.question_id in seen_qids:
             raise _bad_request(
                 "duplicate question_id in questions",
                 details={"question_id": q.question_id},
             )
-        if q.number in seen_numbers:
-            raise _bad_request(
-                "duplicate number in questions",
-                details={"number": q.number},
-            )
         seen_qids.add(q.question_id)
-        seen_numbers.add(q.number)
         question_info[q.question_id] = q.max_marks
 
     # Validate human marks keys exist and are within [0, max_marks]
@@ -66,7 +106,7 @@ def set_questions_config(payload: QuestionConfigReq) -> OkRes:
             "number": q.number,
             "max_marks": q.max_marks,
         }
-        for q in payload.questions
+        for q in normalized_questions
     ]
 
     try:
@@ -84,7 +124,7 @@ def set_questions_config(payload: QuestionConfigReq) -> OkRes:
             .execute()
         )
         existing_qids = {row["question_id"] for row in (existing.data or [])}
-        desired_qids = {q.question_id for q in payload.questions}
+        desired_qids = {q.question_id for q in normalized_questions}
         to_delete = list(existing_qids - desired_qids)
         if to_delete:
             (
@@ -112,3 +152,33 @@ def set_questions_config(payload: QuestionConfigReq) -> OkRes:
         raise HTTPException(status_code=500, detail=f"Failed to upsert stats: {e}")
 
     return OkRes(ok=True)
+
+
+@router.get("/questions/{session_id}", response_model=QuestionsRes)
+def get_questions(session_id: str) -> QuestionsRes:
+    # Ensure session exists
+    s = supabase.table("session").select("id").eq("id", session_id).execute()
+    if not s.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session_id not found")
+
+    try:
+        res = (
+            supabase.table("question")
+            .select("question_id,number,max_marks")
+            .eq("session_id", session_id)
+            .order("number")
+            .execute()
+        )
+        rows = res.data or []
+        questions = [
+            QuestionConfigQuestion(
+                question_id=str(r.get("question_id")),
+                number=int(r.get("number")),
+                max_marks=float(r.get("max_marks")),
+            )
+            for r in rows
+            if r.get("question_id") is not None and r.get("number") is not None and r.get("max_marks") is not None
+        ]
+        return QuestionsRes(session_id=session_id, questions=questions)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch questions: {e}")

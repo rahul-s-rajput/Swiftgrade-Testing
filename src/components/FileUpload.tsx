@@ -94,6 +94,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
                 )}
               </div>
               <button
+                type="button"
                 onClick={() => removeFile(index)}
                 className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
               >

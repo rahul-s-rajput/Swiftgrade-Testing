@@ -59,3 +59,31 @@ app.add_middleware(
 )
 ```
 
+## Status
+Completed on 2025-08-28 (PT). Unified JSON error envelope and permissive CORS configured for local dev.
+
+## Completed Tasks
+- Centralized error handlers in `app/util/errors.py`:
+  - Standard envelope `{ error: { code, message, details, correlation_id } }`.
+  - Correlation ID from `X-Request-ID` or generated UUID; logged with each error.
+  - Maps common codes: `VALIDATION_ERROR`, `NOT_FOUND`, `UNAUTHORIZED`, `RATE_LIMITED`, `HTTP_ERROR`, `INTERNAL_ERROR`.
+  - Propagates headers (e.g., `Retry-After`) from raised `HTTPException`.
+- Updated grading router `app/routers/grade.py`:
+  - Returns 422 for validation errors via `_bad_request()`.
+  - On OpenRouter 429 after retries, raises 429 with `Retry-After` header.
+- CORS in `app/main.py` reads `CORS_ORIGINS` from environment and configures `CORSMiddleware` with `expose_headers=["*"]`.
+- `.env.example` documents `CORS_ORIGINS` for Vite dev ports.
+
+## Implementation Notes
+- Error handlers registered in `app/main.py`:
+  - `validation_exception_handler` (422) includes field-level `details.errors` from FastAPI validation.
+  - `http_exception_handler` maps codes by status and includes propagated headers.
+  - `general_exception_handler` returns 500 with `INTERNAL_ERROR` and logs correlation id.
+- CORS origins parsed from `CORS_ORIGINS` (comma-separated) with credentials, all methods/headers, and all exposed headers.
+
+## Testing Notes
+- 422: Trigger by sending an invalid payload; expect `error.code=VALIDATION_ERROR` and field errors.
+- 404: Request with unknown session; expect `error.code=NOT_FOUND`.
+- 429: Force OpenRouter rate limit (or mock); expect 429 with `Retry-After` header surfaced.
+- 500: Cause an internal exception; expect `error.code=INTERNAL_ERROR` and correlation id in logs.
+- CORS: From `http://localhost:5173` call any endpoint; verify no CORS errors and custom headers accessible.

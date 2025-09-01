@@ -1,0 +1,19 @@
+# QUICK COPY-PASTE FOR TEST GRADING APP
+
+## STUDENT 1: SARAH JOHNSON (94/100)
+
+### Questions (copy entire block):
+[{"question_id":"Q1","number":1,"max_marks":10},{"question_id":"Q2","number":2,"max_marks":15},{"question_id":"Q3","number":3,"max_marks":12},{"question_id":"Q4","number":4,"max_marks":8},{"question_id":"Q5","number":5,"max_marks":10},{"question_id":"Q6","number":6,"max_marks":15},{"question_id":"Q7","number":7,"max_marks":10},{"question_id":"Q8","number":8,"max_marks":8},{"question_id":"Q9","number":9,"max_marks":7},{"question_id":"Q10","number":10,"max_marks":5}]
+
+### Human Grades (copy entire block):
+{"Q1":10,"Q2":14,"Q3":11,"Q4":8,"Q5":10,"Q6":13,"Q7":9,"Q8":8,"Q9":6,"Q10":5}
+
+---
+
+## STUDENT 2: MICHAEL CHEN (69/100)
+
+### Questions (copy entire block):
+[{"question_id":"Q1","number":1,"max_marks":10},{"question_id":"Q2","number":2,"max_marks":15},{"question_id":"Q3","number":3,"max_marks":12},{"question_id":"Q4","number":4,"max_marks":8},{"question_id":"Q5","number":5,"max_marks":10},{"question_id":"Q6","number":6,"max_marks":15},{"question_id":"Q7","number":7,"max_marks":10},{"question_id":"Q8","number":8,"max_marks":8},{"question_id":"Q9","number":9,"max_marks":7},{"question_id":"Q10","number":10,"max_marks":5}]
+
+### Human Grades (copy entire block):
+{"Q1":6,"Q2":12,"Q3":6,"Q4":6,"Q5":3,"Q6":12,"Q7":7,"Q8":8,"Q9":5,"Q10":4}

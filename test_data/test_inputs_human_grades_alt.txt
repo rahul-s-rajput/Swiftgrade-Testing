@@ -1,0 +1,105 @@
+# Human Marked Grades for Student: Michael Chen
+# Student ID: 2024-0892
+# Test Date: November 15, 2024
+# Graded by: Prof. Michael Thompson
+
+## DETAILED MARKING SHEET
+
+Q1: 6/10
+- Correct use of power rule for first three terms (+6)
+- ERROR: Tried to differentiate constant -7 (should be 0)
+- Shows some understanding but fundamental error
+- Work shown but conclusion incorrect
+
+Q2: 12/15
+- Correct integration method (+8)
+- Correct calculation of integrals (+4)
+- MISSING: Constant of integration C (-3)
+- Otherwise good work
+
+Q3: 6/12
+- Basic understanding of photosynthesis (+3)
+- Mentioned chlorophyll and light requirement (+2)
+- Equation not balanced (-4)
+- Lacks detail about the process (-2)
+- Very basic explanation
+
+Q4: 6/8
+- Correct formula stated (+2)
+- Correct method (+2)
+- Calculation error: 7.5² = 56.25 not 57.25 (-2)
+- Units included (+2)
+
+Q5: 3/10
+- Attempted to balance Fe correctly (+2)
+- Failed to balance oxygen atoms (-5)
+- Showed some work (+1)
+- Final answer is incorrect and not balanced (-2)
+
+Q6: 12/15
+- Correct approach and equations (+8)
+- Used g = 10 m/s² instead of 9.8 m/s² (-2)
+- Calculations consistent with chosen value (+4)
+- Small accuracy issue but method correct (-1)
+
+Q7: 7/10
+- Basic structure described correctly (+4)
+- Correct charges for particles (+2)
+- Confused about atomic number definition (-2)
+- Vague about mass number (-1)
+- Minimal detail provided
+
+Q8: 8/8
+- Perfect use of quadratic formula
+- All calculations correct
+- Clear working shown
+- Both roots found accurately
+
+Q9: 5/7
+- Correct conversion formula (+2)
+- Calculation error in division (+2)
+- Used K = °C + 273 instead of 273.15 (-1)
+- Propagated error to Kelvin (-1)
+- Method mostly correct (+1)
+
+Q10: 4/5
+- Correct statement of law (+2)
+- Correct formula F = ma (+2)
+- Variables defined (+1)
+- Informal language but essentially correct
+
+## SUMMARY STATISTICS
+
+Total Score: 69/100
+Percentage: 69%
+Grade: C+
+
+## OVERALL FEEDBACK
+
+Strengths:
+- Shows basic understanding of most concepts
+- Attempts all questions
+- Some correct problem-solving approaches
+
+Areas for Significant Improvement:
+- Attention to detail in calculations
+- Understanding of fundamental rules (derivative of constants)
+- Chemical equation balancing needs practice
+- Time management (submitted 2 min before deadline - likely rushed)
+- More detailed explanations needed
+
+## QUESTION-BY-QUESTION PERFORMANCE
+
+Mathematics Questions (Q1, Q2, Q4, Q6, Q8, Q9): 43/60 (71.7%)
+Science Questions (Q3, Q5, Q7, Q10): 20/40 (50%)
+
+Difficulty Analysis:
+- Easy Questions: 27/38 (71.1%)
+- Medium Questions: 21/37 (56.8%)
+- Hard Questions: 12/15 (80%) - surprisingly good!
+
+Time Management: Poor (rushed submission)
+Recommendation: Additional tutoring in chemistry and review of calculus fundamentals
+
+Examiner's Signature: M. Thompson
+Date Graded: November 16, 2024

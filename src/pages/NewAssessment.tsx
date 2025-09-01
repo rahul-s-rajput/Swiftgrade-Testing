@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, AlertCircle, Upload, Sparkles } from 'lucide-react';
 import { useAssessments } from '../context/AssessmentContext';
@@ -6,11 +6,29 @@ import { FileUpload } from '../components/FileUpload';
 import { MultiSelect } from '../components/MultiSelect';
 import { NumberInput } from '../components/NumberInput';
 import { useOpenRouterModels } from '../hooks/useOpenRouterModels';
+import { ReasoningLevel } from '../types';
 
 export const NewAssessment: React.FC = () => {
   const navigate = useNavigate();
   const { addAssessment } = useAssessments();
   const { models, loading: modelsLoading, error: modelsError, refetch: refetchModels, modelInfoById } = useOpenRouterModels();
+
+  // Only show models that can accept image inputs for this workflow
+  const imageModels = useMemo(() =>
+    models.filter(m => !!modelInfoById?.[m.id]?.supportsImage),
+    [models, modelInfoById]
+  );
+
+  // If any previously selected model isn't image-capable, remove it silently
+  useEffect(() => {
+    if (!imageModels.length) return;
+    const allowed = new Set(imageModels.map(m => m.id));
+    setFormData(prev => {
+      const filtered = prev.selectedModels.filter(id => allowed.has(id));
+      if (filtered.length === prev.selectedModels.length) return prev;
+      return { ...prev, selectedModels: filtered };
+    });
+  }, [imageModels]);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -26,8 +44,7 @@ export const NewAssessment: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Story 4: Reasoning configuration per selected selection (supports duplicates)
-  type ReasoningLevel = 'none' | 'low' | 'medium' | 'high' | 'custom';
-  const [reasoningBySelection, setReasoningBySelection] = useState<Array<{ level: ReasoningLevel; tokens?: number }>>([]);
+  const [reasoningBySelection, setReasoningBySelection] = useState<Array<{ level: ReasoningLevel; tokens?: number }>>([]); // Using ReasoningLevel from types
 
   // Popover state for per-chip reasoning configuration
   const [chipMenu, setChipMenu] = useState<{ index: number | null; id: string | null; anchor: { left: number; top: number } | null }>({ index: null, id: null, anchor: null });
@@ -114,7 +131,8 @@ export const NewAssessment: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      await addAssessment({
+      // Fire-and-forget: start assessment creation and grading in background
+      void addAssessment({
         name: formData.name,
         studentImages: formData.studentImages,
         answerKeyImages: formData.answerKeyImages,
@@ -122,9 +140,11 @@ export const NewAssessment: React.FC = () => {
         humanGrades: formData.humanGrades,
         selectedModels: formData.selectedModels,
         iterations: formData.iterations,
+        reasoningBySelection: reasoningBySelection,
         status: 'running'
       });
 
+      // Immediately navigate back to dashboard to show running state
       navigate('/');
     } catch (error) {
       console.error('Failed to create assessment:', error);
@@ -134,7 +154,7 @@ export const NewAssessment: React.FC = () => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="w-full">
       {/* Header */}
       <div className="mb-8">
         <button
@@ -158,7 +178,7 @@ export const NewAssessment: React.FC = () => {
       </div>
 
       {/* Form */}
-      <div className="bg-white/70 backdrop-blur-sm shadow-xl rounded-2xl border border-white/50 overflow-hidden">
+      <div className="bg-white/70 backdrop-blur-sm shadow-xl rounded-2xl border border-white/50 overflow-visible">
         <form onSubmit={handleSubmit} className="p-8">
           {/* Test Name - Full Width */}
           <div className="mb-8">
@@ -205,7 +225,7 @@ export const NewAssessment: React.FC = () => {
               {/* Questions */}
               <div>
                 <label htmlFor="questions" className="block text-sm font-semibold text-slate-700 mb-3">
-                  Question List
+                  Question List (JSON Format)
                 </label>
                 <textarea
                   id="questions"
@@ -215,8 +235,9 @@ export const NewAssessment: React.FC = () => {
                   className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
                     errors.questions ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-blue-500'
                   } bg-white/80 backdrop-blur-sm resize-none`}
-                  placeholder="Q1: What is the derivative of x²?&#10;Q2: Solve the integral ∫x dx&#10;Q3: Explain the concept of limits"
+                  placeholder='[{"question_id":"Q1","max_marks":10},{"question_id":"Q2","max_marks":15},{"question_id":"Q3","max_marks":20}]'
                 />
+                <p className="text-xs text-slate-500 mt-1">Enter a JSON array with question_id and max_marks for each question</p>
                 {errors.questions && (
                   <div className="mt-2 flex items-center text-sm text-red-600">
                     <AlertCircle className="w-4 h-4 mr-1" />
@@ -250,7 +271,7 @@ export const NewAssessment: React.FC = () => {
                   <div ref={chipMenuContainerRef} className="relative">
                   <MultiSelect
                     label="Select AI Models for Testing"
-                    options={models}
+                    options={imageModels}
                     selectedValues={formData.selectedModels}
                     onChange={(values) => {
                       const prev = formData.selectedModels;
@@ -275,6 +296,7 @@ export const NewAssessment: React.FC = () => {
                       setReasoningBySelection(prevReasoning => values.map((_, i) => prevReasoning[i] || { level: 'none' }));
                     }}
                     placeholder="Choose models to evaluate..."
+                    dropdownPlacement="right"
                     renderOptionMeta={renderOptionMeta}
                     allowDuplicates
                     maxPerOption={4}
@@ -417,7 +439,7 @@ export const NewAssessment: React.FC = () => {
               {/* Human Grades */}
               <div>
                 <label htmlFor="humanGrades" className="block text-sm font-semibold text-slate-700 mb-3">
-                  Human Graded Marks (Reference)
+                  Human Graded Marks (JSON Format)
                 </label>
                 <textarea
                   id="humanGrades"
@@ -427,8 +449,9 @@ export const NewAssessment: React.FC = () => {
                   className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
                     errors.humanGrades ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-blue-500'
                   } bg-white/80 backdrop-blur-sm resize-none`}
-                  placeholder="Q1: 8/10 - Good understanding of derivatives&#10;Q2: 6/10 - Correct method, minor calculation error&#10;Q3: 9/10 - Excellent explanation"
+                  placeholder='{"Q1":8,"Q2":6,"Q3":18}'
                 />
+                <p className="text-xs text-slate-500 mt-1">Enter a JSON object with question_id as keys and marks as values</p>
                 {errors.humanGrades && (
                   <div className="mt-2 flex items-center text-sm text-red-600">
                     <AlertCircle className="w-4 h-4 mr-1" />

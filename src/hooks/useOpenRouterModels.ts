@@ -13,11 +13,24 @@ interface OpenRouterModel {
     image?: number | string;
     internal_reasoning?: number | string;
   };
+  architecture?: {
+    modality?: string;
+    input_modalities?: string[];
+    output_modalities?: string[];
+  };
   supported_parameters?: string[];
   // Provider is derivable from id (prefix before "/") but may exist
   // in some responses as meta; we keep it minimal and optional here.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
+}
+
+function detectImageCapability(model: OpenRouterModel): boolean {
+  const arch = model.architecture;
+  const inputs: string[] = Array.isArray(arch?.input_modalities) ? arch!.input_modalities! : [];
+  const viaArray = inputs.map(s => String(s).toLowerCase()).includes('image');
+  const viaModality = typeof arch?.modality === 'string' && arch!.modality!.toLowerCase().includes('image');
+  return viaArray || viaModality;
 }
 
 type ReasoningType = 'effort' | 'max_tokens' | 'both' | 'none';
@@ -27,6 +40,7 @@ interface ModelInfo {
   reasoningType: ReasoningType;
   hasIncludeReasoning: boolean;
   hasInternalReasoningPricing: boolean;
+  supportsImage: boolean;
   variants: string[];
   contextDisplay: string;
   priceDisplay: string;
@@ -128,6 +142,7 @@ export function useOpenRouterModels() {
         reasoningType: caps.reasoningType,
         hasIncludeReasoning: caps.hasIncludeReasoning,
         hasInternalReasoningPricing: caps.hasInternalReasoningPricing,
+        supportsImage: detectImageCapability(m),
         variants: parseVariants(id),
         contextDisplay: safeContextDisplay(m),
         priceDisplay: safePriceDisplay(m),
@@ -146,6 +161,7 @@ export function useOpenRouterModels() {
         reasoningType: 'none',
         hasIncludeReasoning: false,
         hasInternalReasoningPricing: false,
+        supportsImage: false,
         variants: parseVariants(m.id),
         contextDisplay: 'Context: —',
         priceDisplay: 'Price: —',

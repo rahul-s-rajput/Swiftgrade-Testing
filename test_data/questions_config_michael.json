@@ -1,0 +1,67 @@
+{
+  "session_id": "REPLACE_WITH_SESSION_ID",
+  "questions": [
+    {
+      "question_id": "Q1",
+      "number": 1,
+      "max_marks": 10
+    },
+    {
+      "question_id": "Q2",
+      "number": 2,
+      "max_marks": 15
+    },
+    {
+      "question_id": "Q3",
+      "number": 3,
+      "max_marks": 12
+    },
+    {
+      "question_id": "Q4",
+      "number": 4,
+      "max_marks": 8
+    },
+    {
+      "question_id": "Q5",
+      "number": 5,
+      "max_marks": 10
+    },
+    {
+      "question_id": "Q6",
+      "number": 6,
+      "max_marks": 15
+    },
+    {
+      "question_id": "Q7",
+      "number": 7,
+      "max_marks": 10
+    },
+    {
+      "question_id": "Q8",
+      "number": 8,
+      "max_marks": 8
+    },
+    {
+      "question_id": "Q9",
+      "number": 9,
+      "max_marks": 7
+    },
+    {
+      "question_id": "Q10",
+      "number": 10,
+      "max_marks": 5
+    }
+  ],
+  "human_marks_by_qid": {
+    "Q1": 6.0,
+    "Q2": 12.0,
+    "Q3": 6.0,
+    "Q4": 6.0,
+    "Q5": 3.0,
+    "Q6": 12.0,
+    "Q7": 7.0,
+    "Q8": 8.0,
+    "Q9": 5.0,
+    "Q10": 4.0
+  }
+}

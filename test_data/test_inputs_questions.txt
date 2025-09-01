@@ -1,0 +1,15 @@
+# Question IDs and Maximum Marks
+# Format: Question_ID: Description (Max Marks)
+
+Q1: Differentiate f(x) = 3x³ - 2x² + 5x - 7 (10 marks)
+Q2: Solve the integral ∫(2x² + 3x - 1)dx (15 marks)  
+Q3: Explain photosynthesis and write chemical equation (12 marks)
+Q4: Calculate area of circle with radius r = 7.5 cm (8 marks)
+Q5: Balance chemical equation Fe + O₂ → Fe₂O₃ (10 marks)
+Q6: Ball thrown upward - find max height and time (15 marks)
+Q7: Describe atomic structure, atomic number, mass number (10 marks)
+Q8: Find roots of x² - 5x + 6 = 0 (8 marks)
+Q9: Convert 75°F to Celsius and Kelvin (7 marks)
+Q10: State Newton's Second Law and mathematical form (5 marks)
+
+# Total: 100 marks
