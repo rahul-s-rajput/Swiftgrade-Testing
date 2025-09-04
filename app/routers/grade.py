@@ -336,11 +336,6 @@ def _build_messages(student_urls: List[str], key_urls: List[str], questions: Lis
         
         # Render placeholders
         questions_list = "\n".join([f"{q['question_id']} (max {q['max_marks']})" for q in questions])
-        sys_text = (
-            sys_template
-            .replace("[Answer key]", "\n".join(key_urls_norm) if key_urls_norm else "")
-            .replace("[Question list]", questions_list)
-        )
         # Use custom schema template if provided, otherwise use default
         if schema_template:
             # Allow placeholders in schema template too
@@ -353,7 +348,15 @@ def _build_messages(student_urls: List[str], key_urls: List[str], questions: Lis
                 '"answers":[{"question_id":string,"marks_awarded":number,"rubric_notes":string}]}]}\n'
                 "Use the question_id values exactly as provided in the Questions list."
             )
-        sys_text = f"{sys_text}{schema_text}"
+        sys_text = (
+            sys_template
+            .replace("[Answer key]", "\n".join(key_urls_norm) if key_urls_norm else "")
+            .replace("[Question list]", questions_list)
+            .replace("[Response schema]", schema_text)
+        )
+        # If [Response schema] placeholder not used, append schema at end for backward compatibility
+        if "[Response schema]" not in sys_template:
+            sys_text = f"{sys_text}{schema_text}"
         user_text = user_template.replace("[Student assessment]", "\n".join(stu_urls))
 
         # Compose user content with template text + image parts for reliability

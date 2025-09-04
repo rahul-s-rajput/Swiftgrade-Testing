@@ -50,16 +50,16 @@ export interface Attempt {
   rangeQuestionDiscrepancies: number;
   totalScore: number;
   questionFeedback: QuestionFeedback[];
-  // New: lists of question numbers (e.g., [1, 3, 7]) for each discrepancy type
-  lt100Questions?: number[];
-  zpfQuestions?: number[];
-  rangeQuestions?: number[];
+  // New: lists of question ids (e.g., ["MAI.1b(i)", "MAI.1c(ii)"]) for each discrepancy type
+  lt100Questions?: string[];
+  zpfQuestions?: string[];
+  rangeQuestions?: string[];
   // New: failure reasons when a model attempt failed to parse/validate
   failureReasons?: string[];
 }
 
 export interface QuestionFeedback {
-  questionNumber: number;
+  questionId: string;
   feedback: string;
   mark: string;
 }

@@ -242,34 +242,25 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           const rangeQuestionDiscrepancies = d.range?.count ?? 0;
           const totalScore = (totals[model] && totals[model][String(tryIndex)]) ?? 0;
 
-          // Map discrepancy question IDs to question numbers for UI
-          const lt100Questions = ((d.lt100?.questions as string[] | undefined) || [])
-            .map(qid => qidToNumber[qid])
-            .filter((n): n is number => typeof n === 'number')
-            .sort((a, b) => a - b);
-          const zpfQuestions = ((d.zpf?.questions as string[] | undefined) || [])
-            .map(qid => qidToNumber[qid])
-            .filter((n): n is number => typeof n === 'number')
-            .sort((a, b) => a - b);
-          const rangeQuestions = ((d.range?.questions as string[] | undefined) || [])
-            .map(qid => qidToNumber[qid])
-            .filter((n): n is number => typeof n === 'number')
-            .sort((a, b) => a - b);
+            // Map discrepancy question IDs to question numbers for UI
+            const lt100Questions = ((d.lt100?.questions as string[] | undefined) || [])
+            const zpfQuestions = ((d.zpf?.questions as string[] | undefined) || [])
+            const rangeQuestions = ((d.range?.questions as string[] | undefined) || [])
 
-          const questionFeedback = (qRes.questions || [])
-            .slice()
-            .sort((a: QuestionConfigQuestion, b: QuestionConfigQuestion) => a.number - b.number)
-            .map((q: QuestionConfigQuestion) => {
-              const itemsForModel = (byQ[q.question_id]?.[model] || []) as ResultItem[];
-              const item = itemsForModel.find((it: ResultItem) => it.try_index === tryIndex) || null;
-              const markVal = item?.marks_awarded;
-              const markStr = `${markVal ?? 0}/${q.max_marks}`;
-              return {
-                questionNumber: q.number,
-                feedback: item?.rubric_notes || '',
-                mark: markStr,
-              };
-            });
+            const questionFeedback = (qRes.questions || [])
+              .slice()
+              .sort((a: QuestionConfigQuestion, b: QuestionConfigQuestion) => a.number - b.number)
+              .map((q: QuestionConfigQuestion) => {
+                const itemsForModel = (byQ[q.question_id]?.[model] || []) as ResultItem[];
+                const item = itemsForModel.find((it: ResultItem) => it.try_index === tryIndex) || null;
+                const markVal = item?.marks_awarded;
+                const markStr = `${markVal ?? 0}/${q.max_marks}`;
+                return {
+                  questionId: q.question_id,
+                  feedback: item?.rubric_notes || '',
+                  mark: markStr,
+                };
+              });
           // Attach failure reasons from errors endpoint
           const errs = (errorsByModelTry[model] && errorsByModelTry[model][String(tryIndex)]) || [];
           const failureReasons = errs
@@ -496,18 +487,9 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             const totalScore = (totals[model] && totals[model][String(tryIndex)]) ?? 0;
 
             // Map discrepancy question IDs to question numbers for UI
-            const lt100Questions = ((d.lt100?.questions as string[] | undefined) || [])
-              .map((qid: string) => qidToNumber[qid])
-              .filter((n: any): n is number => typeof n === 'number')
-              .sort((a: number, b: number) => a - b);
-            const zpfQuestions = ((d.zpf?.questions as string[] | undefined) || [])
-              .map((qid: string) => qidToNumber[qid])
-              .filter((n: any): n is number => typeof n === 'number')
-              .sort((a: number, b: number) => a - b);
-            const rangeQuestions = ((d.range?.questions as string[] | undefined) || [])
-              .map((qid: string) => qidToNumber[qid])
-              .filter((n: any): n is number => typeof n === 'number')
-              .sort((a: number, b: number) => a - b);
+          const lt100Questions = ((d.lt100?.questions as string[] | undefined) || [])
+          const zpfQuestions = ((d.zpf?.questions as string[] | undefined) || [])
+          const rangeQuestions = ((d.range?.questions as string[] | undefined) || [])
 
             const questionFeedback = questionsPayload
               .sort((a, b) => a.number - b.number)
@@ -517,7 +499,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 const markVal = item?.marks_awarded;
                 const markStr = `${markVal ?? 0}/${q.max_marks}`;
                 return {
-                  questionNumber: q.number,
+                  questionId: q.question_id,
                   feedback: item?.rubric_notes || '',
                   mark: markStr,
                 };

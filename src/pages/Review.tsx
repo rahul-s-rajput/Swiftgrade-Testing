@@ -8,7 +8,7 @@ export const Review: React.FC = () => {
   const navigate = useNavigate();
   const { getAssessment, loadAssessmentResults } = useAssessments();
   const [activeTab, setActiveTab] = useState<'results' | 'questions'>('results');
-  const [selectedQuestion, setSelectedQuestion] = useState<number>(1);
+  const [selectedQuestion, setSelectedQuestion] = useState<string>('');
   const [isLoadingResults, setIsLoadingResults] = useState<boolean>(false);
 
   const assessment = id ? getAssessment(id) : null;
@@ -87,16 +87,16 @@ export const Review: React.FC = () => {
   }, [assessment?.results]);
   const effectiveTotalMaxMarks = totalMaxMarksRaw > 0 ? totalMaxMarksRaw : derivedTotalMaxFromFeedback;
 
-  const questionNumbers = React.useMemo(() => (
-    (assessment?.results?.questions || []).map(q => q.number).sort((a, b) => a - b)
+  const questionIds = React.useMemo(() => (
+    (assessment?.results?.questions || []).map(q => q.text)
   ), [assessment?.results]);
 
   // Ensure selected question is valid after results load
   useEffect(() => {
-    if (questionNumbers.length && !questionNumbers.includes(selectedQuestion)) {
-      setSelectedQuestion(questionNumbers[0]);
+    if (questionIds.length && !questionIds.includes(selectedQuestion)) {
+      setSelectedQuestion(questionIds[0]);
     }
-  }, [questionNumbers, selectedQuestion]);
+  }, [questionIds, selectedQuestion]);
 
   if (!assessment) {
     return (
@@ -341,27 +341,27 @@ export const Review: React.FC = () => {
                             {fmtRatio(attempt.discrepancies100, totalQuestions)}
                           </td>
                           <td className="px-6 py-3 text-sm text-slate-900">
-                            {(attempt.lt100Questions || []).map(num => {
-                              const q = results.questions.find(q => q.number === num);
-                              return q?.text || num;
+                            {(attempt.lt100Questions || []).map(qid => {
+                              const q = results.questions.find(q => q.text === qid);
+                              return q?.text || qid;
                             }).join(', ') || 'none'}
                           </td>
                           <td className="px-6 py-3 text-sm text-slate-900">
                             {fmtRatio(attempt.zpfDiscrepancies, totalQuestions)}
                           </td>
                           <td className="px-6 py-3 text-sm text-slate-900">
-                            {(attempt.zpfQuestions || []).map(num => {
-                              const q = results.questions.find(q => q.number === num);
-                              return q?.text || num;
+                            {(attempt.zpfQuestions || []).map(qid => {
+                              const q = results.questions.find(q => q.text === qid);
+                              return q?.text || qid;
                             }).join(', ') || 'none'}
                           </td>
                           <td className="px-6 py-3 text-sm text-slate-900">
                             {fmtRatio(attempt.rangeDiscrepancies, totalQuestions)}
                           </td>
                           <td className="px-6 py-3 text-sm text-slate-900">
-                            {(attempt.rangeQuestions || []).map(num => {
-                              const q = results.questions.find(q => q.number === num);
-                              return q?.text || num;
+                            {(attempt.rangeQuestions || []).map(qid => {
+                              const q = results.questions.find(q => q.text === qid);
+                              return q?.text || qid;
                             }).join(', ') || 'none'}
                           </td>
                           <td className="px-6 py-3 text-sm text-slate-900">
@@ -396,52 +396,53 @@ export const Review: React.FC = () => {
                       type="button"
                       aria-label="Previous question"
                       onClick={() => {
-                        const idx = questionNumbers.indexOf(selectedQuestion);
+                        const idx = questionIds.indexOf(selectedQuestion);
                         const prevIdx = Math.max(0, idx - 1);
-                        const nextVal = questionNumbers[prevIdx] ?? selectedQuestion;
+                        const nextVal = questionIds[prevIdx] ?? selectedQuestion;
                         setSelectedQuestion(nextVal);
                       }}
                       className="inline-flex items-center px-3 py-2 rounded-lg border border-slate-300 text-slate-700 bg-white/80 hover:bg-slate-50 disabled:opacity-50"
-                      disabled={questionNumbers.indexOf(selectedQuestion) <= 0}
+                      disabled={questionIds.indexOf(selectedQuestion) <= 0}
                     >
                       <ArrowLeft className="w-4 h-4" />
                     </button>
                     <div className="text-xs text-slate-600 min-w-[150px] text-center">
-                      {results.questions.find(q => q.number === selectedQuestion)?.text || `Question ${Math.max(1, questionNumbers.indexOf(selectedQuestion) + 1)}`} ({Math.max(1, questionNumbers.indexOf(selectedQuestion) + 1)} of {questionNumbers.length})
+                      {results.questions.find(q => q.text === selectedQuestion)?.text || `Question ${Math.max(1, questionIds.indexOf(selectedQuestion) + 1)}`} ({Math.max(1, questionIds.indexOf(selectedQuestion) + 1)} of {questionIds.length})
                     </div>
                     <button
                       type="button"
                       aria-label="Next question"
                       onClick={() => {
-                        const idx = questionNumbers.indexOf(selectedQuestion);
-                        const nextIdx = Math.min(questionNumbers.length - 1, idx + 1);
-                        const nextVal = questionNumbers[nextIdx] ?? selectedQuestion;
+                        const idx = questionIds.indexOf(selectedQuestion);
+                        const nextIdx = Math.min(questionIds.length - 1, idx + 1);
+                        const nextVal = questionIds[nextIdx] ?? selectedQuestion;
                         setSelectedQuestion(nextVal);
                       }}
                       className="inline-flex items-center px-3 py-2 rounded-lg border border-slate-300 text-slate-700 bg-white/80 hover:bg-slate-50 disabled:opacity-50"
-                      disabled={questionNumbers.indexOf(selectedQuestion) >= questionNumbers.length - 1}
+                      disabled={questionIds.indexOf(selectedQuestion) >= questionIds.length - 1}
                     >
                       <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {questionNumbers.map((qNum) => {
-                    const isActive = qNum === selectedQuestion;
+                  {questionIds.map((qid, idx) => {
+                    const isActive = qid === selectedQuestion;
+                    const q = results.questions.find(q => q.text === qid);
                     return (
                       <button
-                        key={qNum}
+                        key={qid}
                         type="button"
-                        onClick={() => setSelectedQuestion(qNum)}
+                        onClick={() => setSelectedQuestion(qid)}
                         className={`px-3 py-2 rounded-lg border text-sm transition-all ${
                           isActive
                             ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                             : 'bg-white/80 text-slate-700 border-slate-300 hover:bg-slate-50'
                         }`}
                         aria-current={isActive ? 'true' : undefined}
-                        aria-label={`Select question ${qNum}`}
+                        aria-label={`Select question ${q?.text || qid}`}
                       >
-                        {results.questions.find(q => q.number === qNum)?.text || `Q${qNum}`}
+                        {q?.text || `Q${idx + 1}`}
                       </button>
                     );
                   })}
@@ -466,7 +467,7 @@ export const Review: React.FC = () => {
                     <div className="grid gap-4">
                       {modelResult.attempts.map((attempt) => {
                         const questionFeedback = attempt.questionFeedback.find(
-                          qf => qf.questionNumber === selectedQuestion
+                          qf => qf.questionId === selectedQuestion
                         );
                         return questionFeedback ? (
                           <div key={attempt.attemptNumber} className="bg-gradient-to-r from-slate-50 to-blue-50/50 rounded-lg p-4 border border-slate-200/60">

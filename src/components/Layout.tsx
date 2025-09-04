@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { GraduationCap } from 'lucide-react';
+import { GraduationCap, Plus } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -30,6 +30,15 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             </Link>
             
             <div className="flex items-center gap-3">
+              {/* New Assessment */}
+              <Link
+                to="/new-assessment"
+                className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                New Assessment
+              </Link>
+
               {/* Home Button */}
               <Link
                 to="/"

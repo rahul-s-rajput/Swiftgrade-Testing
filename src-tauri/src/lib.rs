@@ -356,6 +356,27 @@ fn cleanup_backend(state: &BackendState) {
     }
 }
 
+// Async cleanup function that doesn't block the main thread
+// Fixed for Approach #1: Immediate Window Close with Async Cleanup
+async fn cleanup_backend_async(pid: u32) {
+    println!("Starting async backend cleanup for PID: {:?}", pid);
+
+    // Spawn blocking task to handle the cleanup
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::process::Command;
+
+        // On Windows, use taskkill to ensure all child processes are killed
+        #[cfg(target_os = "windows")]
+        {
+            let _ = Command::new("taskkill")
+                .args(&["/F", "/T", "/PID", &pid.to_string()])
+                .output();
+        }
+
+        println!("Async backend cleanup completed for PID: {:?}", pid);
+    }).await.ok();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let backend_state = BackendState {
@@ -425,9 +446,20 @@ pub fn run() {
             app.on_menu_event(move |app, event| {
                 match event.id().as_ref() {
                     "quit" => {
-                        // Clean up backend before quitting
-                        let state = app.state::<BackendState>();
-                        cleanup_backend(&state);
+                        // Extract PID before async operation to avoid lifetime issues
+                        let pid = {
+                            let state = app.state::<BackendState>();
+                            let mut child_guard = state.child.lock().unwrap();
+                            child_guard.take().map(|child| child.pid())
+                        };
+
+                        if let Some(pid) = pid {
+                            // Start async cleanup and exit immediately
+                            tauri::async_runtime::spawn(async move {
+                                cleanup_backend_async(pid).await;
+                            });
+                        }
+                        // Exit immediately without waiting for cleanup
                         std::process::exit(0);
                     }
                     "open_config" => {
@@ -500,9 +532,20 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                // Stop backend when window closes
-                let state = window.state::<BackendState>();
-                cleanup_backend(&state);
+                // Extract PID before async operation to avoid lifetime issues
+                let pid = {
+                    let state = window.state::<BackendState>();
+                    let mut child_guard = state.child.lock().unwrap();
+                    child_guard.take().map(|child| child.pid())
+                };
+
+                if let Some(pid) = pid {
+                    // Start async cleanup but don't wait for it - let window close immediately
+                    tauri::async_runtime::spawn(async move {
+                        cleanup_backend_async(pid).await;
+                    });
+                }
+                // Window will close immediately, cleanup happens in background
             }
         })
         .run(tauri::generate_context!())

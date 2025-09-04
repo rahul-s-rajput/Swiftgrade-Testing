@@ -251,7 +251,7 @@ export const Settings: React.FC = () => {
                 className="w-full min-h-[200px] rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 p-3 font-mono text-sm bg-white"
                 placeholder="Enter the system template..."
               />
-              <p className="text-xs text-slate-500">Supported placeholders: [Answer key], [Question list]</p>
+              <p className="text-xs text-slate-500">Supported placeholders: [Answer key], [Question list], [Response schema]</p>
             </div>
 
             <div className="space-y-2">

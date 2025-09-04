@@ -1,16 +1,31 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Loader2, CheckCircle, Trash2, Eye, Calendar, Cpu, RotateCcw, AlertTriangle } from 'lucide-react';
 import { useAssessments } from '../context/AssessmentContext';
 
 export const Home: React.FC = () => {
   const { assessments, deleteAssessment, refreshSessions, retryAssessment, loading } = useAssessments();
+  const [refreshing, setRefreshing] = useState(false);
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (window.confirm('Are you sure you want to delete this assessment?')) {
       deleteAssessment(id);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    const start = Date.now();
+    try {
+      await refreshSessions();
+      const elapsed = Date.now() - start;
+      if (elapsed < 1000) {
+        await new Promise(res => setTimeout(res, 1000 - elapsed));
+      }
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -69,22 +84,20 @@ export const Home: React.FC = () => {
             Monitor your AI grading tests and analyze performance results
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center">
           <button
-            onClick={() => void refreshSessions()}
-            className="inline-flex items-center px-4 py-3 bg-slate-100 text-slate-800 font-medium rounded-xl hover:bg-slate-200 transition-colors border border-slate-200"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="inline-flex items-center px-4 py-3 bg-slate-100 text-slate-800 font-medium rounded-xl hover:bg-slate-200 transition-colors border border-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
             title="Refresh Sessions"
           >
-            <RotateCcw className="w-5 h-5 mr-2" />
-            Refresh
+            {refreshing ? (
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+            ) : (
+              <RotateCcw className="w-5 h-5 mr-2" />
+            )}
+            {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
-          <Link
-            to="/new-assessment"
-            className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            New Assessment
-          </Link>
         </div>
       </div>
 
