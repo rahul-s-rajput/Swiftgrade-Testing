@@ -47,12 +47,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest'
-            args: '--target universal-apple-darwin'
-            
-          - platform: 'ubuntu-22.04'
-            args: ''
-            
           - platform: 'windows-latest'
             args: ''
 
@@ -77,13 +71,7 @@ jobs:
         id: rust-target
         shell: bash
         run: |
-          if [ "${{ matrix.platform }}" = "windows-latest" ]; then
-            echo "target=x86_64-pc-windows-msvc" >> $GITHUB_OUTPUT
-          elif [ "${{ matrix.platform }}" = "macos-latest" ]; then
-            echo "target=universal-apple-darwin" >> $GITHUB_OUTPUT
-          else
-            echo "target=x86_64-unknown-linux-gnu" >> $GITHUB_OUTPUT
-          fi
+          echo "target=x86_64-pc-windows-msvc" >> $GITHUB_OUTPUT
 
       - name: Build Python backend (Windows)
         if: matrix.platform == 'windows-latest'
@@ -106,47 +94,6 @@ jobs:
             Move-Item -Force dist/backend.exe src-tauri/binaries/backend-x86_64-pc-windows-msvc.exe
           }
 
-      - name: Build Python backend (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          # Create spec file if it doesn't exist
-          if [ ! -f backend_launcher.spec ]; then
-            pyinstaller --onefile --name backend backend_launcher.py
-          else
-            pyinstaller backend_launcher.spec --clean
-          fi
-          
-          # Ensure binaries directory exists
-          mkdir -p src-tauri/binaries
-          
-          # Build for both architectures on macOS
-          if [ -f dist/backend ]; then
-            # Universal binary for macOS
-            cp dist/backend src-tauri/binaries/backend-x86_64-apple-darwin
-            cp dist/backend src-tauri/binaries/backend-aarch64-apple-darwin
-            chmod +x src-tauri/binaries/backend-*
-          fi
-
-      - name: Build Python backend (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          # Create spec file if it doesn't exist
-          if [ ! -f backend_launcher.spec ]; then
-            pyinstaller --onefile --name backend-x86_64-unknown-linux-gnu backend_launcher.py
-          else
-            pyinstaller backend_launcher.spec --clean
-          fi
-          
-          # Ensure binaries directory exists
-          mkdir -p src-tauri/binaries
-          
-          # Move the executable
-          if [ -f dist/backend-x86_64-unknown-linux-gnu ]; then
-            mv dist/backend-x86_64-unknown-linux-gnu src-tauri/binaries/
-          elif [ -f dist/backend ]; then
-            mv dist/backend src-tauri/binaries/backend-x86_64-unknown-linux-gnu
-          fi
-          chmod +x src-tauri/binaries/backend-*
 
       - name: Setup node
         uses: actions/setup-node@v4
@@ -163,17 +110,6 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
-      - name: Install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev
-
       - name: Install frontend dependencies
         run: npm ci
 
@@ -184,13 +120,6 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # For code signing on macOS (optional but recommended)
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           # For code signing on Windows (optional but recommended)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
