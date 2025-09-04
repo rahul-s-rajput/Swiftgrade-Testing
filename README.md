@@ -1,6 +1,6 @@
 # Swiftgrade AI Model Testing Assistant
 
-[![Download Latest Release](https://img.shields.io/badge/Download-Latest%20Release-blue)](https://github.com/your-username/swiftgrade-testing-assistant/releases/latest)
+[![Download Latest Release](https://img.shields.io/badge/Download-Latest%20Release-blue)](https://github.com/rahul-s-rajput/Swiftgrade-Testing/releases/latest)
 
 A specialized desktop application for testing and comparing AI model performance in grading student assessments.
 
@@ -17,7 +17,7 @@ Swiftgrade Testing Assistant is a desktop application designed specifically for 
 ## 🚀 Quick Start
 
 ### Step 1: Download
-1. Go to [Releases](https://github.com/your-username/swiftgrade-testing-assistant/releases/latest)
+1. Go to [Releases](https://github.com/rahul-s-rajput/Swiftgrade-Testing/releases/latest)
 2. Download the appropriate version for your operating system:
    - **Windows**: Download `swiftgrade-testing-assistant_x.x.x_x64-setup.exe`
    - **macOS**: Download `swiftgrade-testing-assistant_x.x.x_x64.dmg`
@@ -177,7 +177,7 @@ The application automatically validates:
 
 ### Getting Help
 - Review the [technical documentation](TECHNICAL_README.md) for detailed setup
-- Check the [Issues](https://github.com/your-username/swiftgrade-testing-assistant/issues) page
+- Check the [Issues](https://github.com/rahul-s-rajput/Swiftgrade-Testing/issues) page
 - Include error logs and your configuration when reporting problems
 
 ## 🔒 Security & Privacy
