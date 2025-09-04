@@ -509,8 +509,8 @@ pub fn run() {
                         // Show about dialog using the correct API
                         let app_handle_clone = app.app_handle().clone();
                         app_handle_clone.dialog()
-                            .message("Mark Grading Assistant v1.0.0\n\nAn AI-powered tool for grading assessments.\n\n© 2024")
-                            .title("About Mark Grading Assistant")
+                            .message("Swiftgrade Testing Assistant v1.0.0\n\nAn AI-powered tool for grading assessments.\n\n© 2024")
+                            .title("About Swiftgrade Testing Assistant")
                             .blocking_show();
                     }
                     _ => {}

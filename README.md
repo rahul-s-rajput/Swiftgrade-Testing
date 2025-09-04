@@ -1,114 +1,69 @@
-# AI Mark Grading Testing App
+# Swiftgrade AI Model Testing Assistant
 
-A comprehensive application for testing and comparing AI model performance in grading student assessments.
+[![Download Latest Release](https://img.shields.io/badge/Download-Latest%20Release-blue)](https://github.com/your-username/swiftgrade-testing-assistant/releases/latest)
 
-## 🚀 Features
+A specialized desktop application for testing and comparing AI model performance in grading student assessments.
 
-- **Multi-Model Testing**: Compare grading results across different AI models
-- **Auto-Numbering Questions**: Backend automatically generates question numbers from array position
-- **Customizable Prompts**: Full control over system, user, and schema templates via settings
-- **Reasoning Support**: Per-model reasoning configuration (effort-based or token-based)
-- **Flexible Parser**: Handles various response formats from different AI models
-- **Detailed Analytics**: Compare AI grades against human benchmark marks
+## 📋 What is Swiftgrade Testing Assistant?
 
-## 📁 Project Structure
+Swiftgrade Testing Assistant is a desktop application designed specifically for testing and comparing different AI models' performance in grading student assessments. The app allows you to:
 
-```
-project/
-├── app/                    # Backend (FastAPI)
-│   ├── routers/           # API endpoints
-│   ├── schemas.py         # Pydantic models
-│   └── main.py           # Application entry
-├── src/                    # Frontend (React + TypeScript)
-│   ├── pages/            # Main application pages
-│   ├── components/       # Reusable components
-│   └── utils/            # API client and utilities
-├── docs/                   # All documentation
-├── scripts/                # Utility scripts
-│   └── sql/              # Database migrations
-├── tests/                  # Test scripts
-├── test_data/             # Sample data and test inputs
-└── logs/                  # Application logs
-```
+- **Test multiple AI models** simultaneously on the same assessment data
+- **Compare grading accuracy** across different models
+- **Analyze performance metrics** and discrepancies
+- **Generate detailed reports** on model effectiveness
+- **Fine-tune prompts and configurations** for optimal results
 
-## 🛠️ Setup
+## 🚀 Quick Start
 
-### Prerequisites
-- Python 3.8+
-- Node.js 16+
-- Supabase account (for database and storage)
-- OpenRouter API key
+### Step 1: Download
+1. Go to [Releases](https://github.com/your-username/swiftgrade-testing-assistant/releases/latest)
+2. Download the appropriate version for your operating system:
+   - **Windows**: Download `swiftgrade-testing-assistant_x.x.x_x64-setup.exe`
+   - **macOS**: Download `swiftgrade-testing-assistant_x.x.x_x64.dmg`
+   - **Linux**: Download `swiftgrade-testing-assistant_x.x.x_amd64.AppImage`
 
-### Backend Setup
-```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+### Step 2: Install
+1. Run the downloaded installer
+2. Follow the installation wizard
+3. Launch the application
 
-# Install dependencies
-pip install -r requirements-backend.txt
+### Step 3: Configure
+1. **Get API Keys**: Sign up at [OpenRouter.ai](https://openrouter.ai) for access to multiple AI models
+2. **Configure Settings**: Enter your API keys in the Settings menu
+3. **Set up Database**: Configure Supabase for storing test results
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your API keys
+## 📖 How to Use
 
-# Run backend
-python -m uvicorn app.main:app --reload
-```
+### Basic Testing Workflow
+1. **Launch the app** and ensure your API keys are configured
+2. **Create a new test session** or load existing assessment data
+3. **Select AI models** to test (GPT-4, Claude, Gemini, etc.)
+4. **Upload student assessment data** (responses, rubrics, human scores)
+5. **Run comparative analysis** across all selected models
+6. **Review results** including accuracy metrics and discrepancies
+7. **Export reports** for model performance analysis
 
-### Frontend Setup
-```bash
-# Install dependencies
-npm install
+## 📋 Input Requirements & Supported Formats
 
-# Run frontend
-npm run dev
-```
+### Required Input Types
 
-### Database Setup
-Run the SQL migrations in Supabase:
-1. Go to Supabase SQL Editor
-2. Run scripts from `scripts/sql/` folder in order
+The application requires two main types of inputs for effective AI model testing:
 
-## 🔧 Configuration
+#### 1. **Assessment Questions**
+Each question should include:
+- **Question ID**: Unique identifier (e.g., "Q1", "Q2")
+- **Maximum Marks**: Total points available (e.g., 10, 15)
 
-### Environment Variables (.env)
-```
-OPENROUTER_API_KEY=your_key_here
-SUPABASE_URL=your_supabase_url
-SUPABASE_ANON_KEY=your_supabase_key
-OPENROUTER_DEBUG=1  # Enable detailed logging
-```
+#### 2. **Human Graded Student Responses**
+For each question, you need:
+- **Student Responses**: Actual student answers (text, can include formatting)
+- **Human Benchmark Grades**: Reference grades given by human evaluators
+- **Student IDs**: Unique identifiers for tracking
 
-### Custom Prompts
-Navigate to Settings page to customize:
-- **System template**: Instructions for the AI model
-- **User template**: How to present student data
-- **Schema template**: JSON response format expected
+### Supported Input Formats
 
-## 📝 API Documentation
-
-### Key Endpoints
-
-#### Session Management
-- `POST /sessions` - Create new assessment session
-- `GET /sessions` - List all sessions
-- `DELETE /sessions/{id}` - Delete a session
-
-#### Question Configuration
-- `POST /questions/config` - Configure questions (auto-numbering supported)
-- `GET /questions/{session_id}` - Get questions for a session
-
-#### Grading
-- `POST /grade/single` - Grade with selected models
-- `GET /results/{session_id}` - Get grading results
-- `GET /stats/{session_id}` - Get statistics and discrepancies
-
-#### Settings
-- `GET /settings/prompt` - Get prompt templates
-- `PUT /settings/prompt` - Update prompt templates
-
-### Question Format (Simplified)
+#### JSON Schema Structure
 ```json
 {
   "questions": [
@@ -116,75 +71,122 @@ Navigate to Settings page to customize:
     {"question_id": "Q2", "max_marks": 15}
   ],
   "human_marks_by_qid": {
-    "Q1": 9,
-    "Q2": 14
+    "Q1": 8.5,
+    "Q2": 12.0
   }
 }
 ```
-Note: Question numbers are auto-generated from array position!
 
-## 🧪 Testing
-
-Run test scripts from the `tests/` folder:
-```bash
-# Test auto-numbering feature
-python tests/test_auto_numbering.py
-
-# Test reasoning configuration
-python tests/test_reasoning.py
-
-# Test backend endpoints
-python tests/test_backend.py
-
-# Test database settings
-python tests/test_database_settings.py
+#### Student Response Format
+```json
+{
+  "student_responses": {
+    "student_001": {
+      "Q1": "The main themes in the essay include...",
+      "Q2": "To solve this problem: Step 1..."
+    }
+  }
+}
 ```
 
-## 📚 Documentation
+### Configurable Response Schemas
 
-### Key Documentation
-- [Backend Documentation](docs/README-backend.md)
-- [API JSON Formats](docs/API_JSON_FORMATS.md)
-- [Reasoning Implementation](docs/REASONING_IMPLEMENTATION.md)
-- [Frontend Input Formats](docs/FRONTEND_INPUT_JSON.md)
-- [Test Inputs Guide](docs/TEST_INPUTS_README.md)
+Users can customize the AI response format through the Settings menu:
 
-### Recent Updates
-- ✅ Auto-numbering questions from array position
-- ✅ Customizable schema templates in settings
-- ✅ Per-model reasoning configuration
-- ✅ Improved error handling and logging
+#### Alternative Schema Templates
 
-## 🔍 Debugging
+The system supports multiple response format variations. Here are additional templates you can use:
 
-Enable debug mode for detailed logging:
-```bash
-# In .env file
-OPENROUTER_DEBUG=1
+**Simplified Question-Only Format:**
+```json
+Return ONLY JSON: {"answers":[{"question_id":"Q1","marks_awarded":8.5,"rubric_notes":"Good analysis"}]}
 ```
 
-Check logs in the `logs/` directory for session-specific debugging.
+**Alternative Field Names:**
+```json
+Return ONLY JSON: {"result":[{"first_name":"John","last_name":"Doe","answers":[{"question_id":"Q1","mark":8.5,"feedback":"Well done"}]}]}
+```
 
-## 🤝 Contributing
+**Top-Level Results Format:**
+```json
+Return ONLY JSON: {"results":{"Q1":{"mark":8.5,"feedback":"Good work"},"Q2":{"mark":7.0,"feedback":"Needs improvement"}}}
+```
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests to ensure everything works
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
+**Grade-Only Format:**
+```json
+Return ONLY JSON: {"results":{"Q1":8.5,"Q2":7.0}}
+```
 
-## 📄 License
+**Mixed Format:**
+```json
+Return ONLY JSON: {"results":{"Q1":{"mark":9.0,"feedback":"Outstanding"},"Q2":8.5,"Q3":"Good effort"}}
+```
 
-This project is proprietary software. All rights reserved.
+**Compact Format:**
+```json
+Return ONLY JSON: {"grades":{"Q1":{"score":8,"notes":"Good"},"Q2":{"score":7,"notes":"Okay"}}}
+```
 
-## 🙏 Acknowledgments
+**Flexible Field Names:**
+The system automatically recognizes these field variations:
+- **Question ID**: `question_id`, `qid`, `questionID`, `question`, `question_number`
+- **Marks**: `marks_awarded`, `mark`, `score`
+- **Notes**: `rubric_notes`, `feedback`, `notes`
+- **Top-level keys**: `result`, `results`, `grades`, `answers`
 
-- OpenRouter for unified AI model access
-- Supabase for backend infrastructure
-- React and FastAPI communities
+### Question Types Supported
+
+The system supports various assessment formats:
+- **Essay Questions**: Long-form written responses
+- **Short Answer**: Brief responses (1-3 sentences)
+- **Mathematical Problems**: Step-by-step solutions
+- **Analysis Questions**: Critical thinking and evaluation
+- **Problem-Solving**: Case studies and scenarios
+
+### File Upload Support
+
+You can upload assessment data via:
+- **JSON Files**: Structured data with questions and responses
+- **CSV Files**: Tabular format with student responses
+- **Text Files**: Plain text assessments
+
+### Data Validation
+
+The application automatically validates:
+- **Question completeness**: All required fields present
+- **Grade consistency**: Human grades within valid ranges
+- **Response quality**: Minimum response length requirements
+- **Format compliance**: JSON structure and field types
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+**"API connection failed"**
+- Verify your OpenRouter API key is correct
+- Check your internet connection
+- Ensure you have sufficient API credits
+
+**"Model comparison not working"**
+- Confirm all selected models are available in your OpenRouter plan
+- Check API rate limits for high-volume testing
+
+**"Results not saving"**
+- Verify Supabase database connection
+- Check storage permissions and quota
+
+### Getting Help
+- Review the [technical documentation](TECHNICAL_README.md) for detailed setup
+- Check the [Issues](https://github.com/your-username/swiftgrade-testing-assistant/issues) page
+- Include error logs and your configuration when reporting problems
+
+## 🔒 Security & Privacy
+
+- API keys are stored locally and encrypted
+- Test data is stored securely in Supabase
+- No data is transmitted except to authorized AI services
+- Full control over data retention and deletion
 
 ---
 
-For questions or support, please open an issue in the repository.
+**For technical setup and advanced configuration, see [TECHNICAL_README.md](TECHNICAL_README.md)**

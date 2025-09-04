@@ -1,6 +1,6 @@
 {
-  "productName": "Mark Grading Assistant",
-  "identifier": "com.markgrading.assistant",
+  "productName": "Swiftgrade Testing Assistant",
+  "identifier": "com.swiftgrade.testing.assistant",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
@@ -11,7 +11,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Mark Grading Assistant",
+        "title": "Swiftgrade Testing Assistant",
         "width": 1400,
         "height": 900,
         "resizable": true,
