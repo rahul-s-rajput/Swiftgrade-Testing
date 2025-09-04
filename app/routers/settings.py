@@ -1,9 +1,20 @@
 from fastapi import APIRouter, HTTPException, status
 from ..supabase_client import supabase
 from ..schemas import PromptSettingsReq, PromptSettingsRes
+import httpx
+import os
 
 
 router = APIRouter()
+
+@router.get("/settings/test")
+def test_settings_router():
+    """Simple test endpoint to verify settings router is working"""
+    return {
+        "message": "Settings router is working!",
+        "router": "settings",
+        "endpoints": ["/settings/prompt", "/models", "/settings/debug/models"]
+    }
 
 
 DEFAULT_SYSTEM_TEMPLATE = (
@@ -228,3 +239,97 @@ def put_prompt_settings(payload: PromptSettingsReq) -> PromptSettingsRes:
         user_template=payload.user_template,
         schema_template=payload.schema_template
     )
+
+
+@router.get("/models")
+async def get_models():
+    """Proxy endpoint for OpenRouter models API"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info("🔍 Models endpoint called")
+    
+    # Check if httpx is available
+    try:
+        import httpx
+        logger.info("✓ httpx is available")
+    except ImportError as e:
+        logger.error("❌ httpx not available")
+        raise HTTPException(status_code=500, detail="httpx dependency not available")
+    
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    if not openrouter_key:
+        logger.error("❌ No OpenRouter API key found")
+        raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured")
+    
+    logger.info("✓ OpenRouter API key is configured")
+    
+    try:
+        logger.info("📡 Making request to OpenRouter API...")
+        async with httpx.AsyncClient() as client:
+            headers = {
+                "Authorization": f"Bearer {openrouter_key}",
+                "HTTP-Referer": os.getenv("OPENROUTER_HTTP_REFERER", "http://localhost:5173"),
+                "X-Title": os.getenv("OPENROUTER_APP_TITLE", "Mark Grading Assistant"),
+            }
+            
+            response = await client.get(
+                "https://openrouter.ai/api/v1/models",
+                headers=headers,
+                timeout=30.0
+            )
+            
+            logger.info(f"📡 OpenRouter API response: {response.status_code}")
+            response.raise_for_status()
+            
+            data = response.json()
+            model_count = len(data.get('data', [])) if isinstance(data.get('data'), list) else 0
+            logger.info(f"✅ Successfully fetched {model_count} models")
+            
+            return data
+            
+    except httpx.HTTPStatusError as e:
+        logger.error(f"❌ OpenRouter API HTTP error: {e.response.status_code if e.response else 'Unknown'}")
+        raise HTTPException(
+            status_code=e.response.status_code if e.response else 500,
+            detail=f"OpenRouter API error: {e}"
+        )
+    except httpx.TimeoutException as e:
+        logger.error("❌ OpenRouter API timeout")
+        raise HTTPException(status_code=504, detail="OpenRouter API timeout")
+    except Exception as e:
+        logger.error(f"❌ Unexpected error fetching models: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch models: {e}")
+
+@router.get("/debug/models")
+async def debug_models():
+    """Debug endpoint to check models endpoint configuration"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    checks = {
+        "httpx_available": False,
+        "openrouter_key_configured": False,
+        "openrouter_key_length": 0,
+        "http_referer": os.getenv("OPENROUTER_HTTP_REFERER", "http://localhost:5173"),
+        "app_title": os.getenv("OPENROUTER_APP_TITLE", "Mark Grading Assistant"),
+    }
+    
+    # Check httpx availability
+    try:
+        import httpx
+        checks["httpx_available"] = True
+    except ImportError:
+        pass
+    
+    # Check OpenRouter key
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    if openrouter_key:
+        checks["openrouter_key_configured"] = True
+        checks["openrouter_key_length"] = len(openrouter_key)
+    
+    return {
+        "status": "debug_info",
+        "checks": checks,
+        "recommendation": "All checks should pass for /models endpoint to work"
+    }

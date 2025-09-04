@@ -1,0 +1,75 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devPath": "http://localhost:5173",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "Mark Grading Assistant",
+    "version": "1.0.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "shell": {
+        "sidecar": true,
+        "scope": [
+          {
+            "name": "backend",
+            "sidecar": true,
+            "args": true
+          }
+        ]
+      },
+      "fs": {
+        "all": true
+      },
+      "path": {
+        "all": true
+      },
+      "process": {
+        "all": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "identifier": "com.markgrading.assistant",
+      "icon": [
+        "icons/icon.ico"
+      ],
+      "externalBin": [
+        "binaries/backend"
+      ]
+    },
+    "security": {
+      "csp": null,
+      "devCsp": null,
+      "freezePrototype": false
+    },
+    "windows": [
+      {
+        "title": "Mark Grading Assistant",
+        "width": 1400,
+        "height": 900,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "skipTaskbar": false,
+        "fileDropEnabled": true,
+        "center": true,
+        "visible": true,
+        "alwaysOnTop": false,
+        "contentProtected": false,
+        "maximizable": true,
+        "minimizable": true,
+        "closable": true,
+        "focusable": true,
+        "fullscreen": false,
+        "webPreferences": {
+          "devtools": true
+        }
+      }
+    ],
+    "macOSPrivateApi": false
+  }
+}

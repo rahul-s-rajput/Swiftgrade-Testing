@@ -1,0 +1,36 @@
+{
+  "identifier": "default",
+  "description": "Default permissions",
+  "windows": [
+    "main"
+  ],
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:event:allow-emit",
+    "core:event:allow-emit-to",
+    "shell:default",
+    "shell:allow-spawn",
+    "shell:allow-kill",
+    "process:default",
+    "process:allow-exit",
+    "fs:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/backend",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
+  ]
+}

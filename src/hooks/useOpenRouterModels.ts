@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AIModel } from '../types';
+import { API_BASE } from '../utils/api';
 
 // Minimal OpenRouter model shape (only fields we may use)
 interface OpenRouterModel {
@@ -200,7 +201,8 @@ export function useOpenRouterModels() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('https://openrouter.ai/api/v1/models');
+      // Use backend proxy endpoint instead of direct OpenRouter API
+      const res = await fetch(`${API_BASE}/models`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const items: OpenRouterModel[] = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
@@ -225,7 +227,8 @@ export function useOpenRouterModels() {
   // Silent info-only refresh to populate capabilities when loading from cache
   const fetchModelInfoOnly = useCallback(async () => {
     try {
-      const res = await fetch('https://openrouter.ai/api/v1/models');
+      // Use backend proxy endpoint instead of direct OpenRouter API
+      const res = await fetch(`${API_BASE}/models`);
       if (!res.ok) return;
       const data = await res.json();
       const items: OpenRouterModel[] = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);

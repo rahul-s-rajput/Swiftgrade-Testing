@@ -53,3 +53,21 @@ backend.db
 
 # OS junk
 Thumbs.db
+
+# Build artifacts and executables
+build/
+binaries/
+src-tauri/target/
+*.exe
+*.msi
+*.dmg
+*.pkg
+*.deb
+*.rpm
+*.snap
+*.appimage
+
+# Bolt tooling
+.bolt/
+.kiro/
+.qoder/

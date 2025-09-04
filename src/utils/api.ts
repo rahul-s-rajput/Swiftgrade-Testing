@@ -1,6 +1,15 @@
 /* Frontend API client for backend integration (Story 26) */
 
-export const API_BASE: string = (import.meta as any).env?.VITE_API_BASE || 'http://127.0.0.1:8000';
+// Dynamic API base that can be overridden by Tauri
+export let API_BASE: string = (window as any).API_BASE || (import.meta as any).env?.VITE_API_BASE || 'http://127.0.0.1:8000';
+
+// Function to update API_BASE (for Tauri)
+export const setApiBase = (url: string) => {
+  console.log('[API] Setting API_BASE from', API_BASE, 'to', url);
+  API_BASE = url;
+  (window as any).API_BASE = url;
+  console.log('[API] API_BASE is now:', API_BASE);
+};
 
 export type ErrorEnvelope = { error?: { code?: string; message?: string; details?: any } } | undefined;
 
@@ -12,46 +21,81 @@ async function parseJsonSafe<T>(resp: Response): Promise<T | undefined> {
   }
 }
 
+// Helper to log API calls in development
+function logApiCall(method: string, path: string, fullUrl: string) {
+  console.log(`[API] ${method} ${path}`);
+  console.log(`[API] Full URL: ${fullUrl}`);
+}
+
 export async function postJSON<T>(path: string, body: any, init?: RequestInit): Promise<T> {
-  const resp = await fetch(`${API_BASE}${path}`, {
+  const fullUrl = `${API_BASE}${path}`;
+  logApiCall('POST', path, fullUrl);
+  
+  const resp = await fetch(fullUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
     body: JSON.stringify(body),
     ...init,
   });
+  
+  console.log(`[API] Response status: ${resp.status}`);
+  
   if (!resp.ok) {
     const data = await parseJsonSafe<ErrorEnvelope>(resp);
     const msg = data?.error?.message || `${resp.status} ${resp.statusText}`;
+    console.error(`[API] Error: ${msg}`);
     const err: any = new Error(msg);
     err.status = resp.status;
     err.retryAfter = resp.headers.get('Retry-After');
     throw err;
   }
-  return (await resp.json()) as T;
+  
+  const result = (await resp.json()) as T;
+  console.log('[API] Success');
+  return result;
 }
 
 export async function getJSON<T>(path: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(`${API_BASE}${path}`, { method: 'GET', ...(init || {}) });
+  const fullUrl = `${API_BASE}${path}`;
+  logApiCall('GET', path, fullUrl);
+  
+  const resp = await fetch(fullUrl, { method: 'GET', ...(init || {}) });
+  
+  console.log(`[API] Response status: ${resp.status}`);
+  
   if (!resp.ok) {
     const data = await parseJsonSafe<ErrorEnvelope>(resp);
     const msg = data?.error?.message || `${resp.status} ${resp.statusText}`;
+    console.error(`[API] Error: ${msg}`);
     const err: any = new Error(msg);
     err.status = resp.status;
     err.retryAfter = resp.headers.get('Retry-After');
     throw err;
   }
-  return (await resp.json()) as T;
+  
+  const result = (await resp.json()) as T;
+  console.log('[API] Success');
+  return result;
 }
 
 export async function del(path: string, init?: RequestInit): Promise<void> {
-  const resp = await fetch(`${API_BASE}${path}`, { method: 'DELETE', ...(init || {}) });
+  const fullUrl = `${API_BASE}${path}`;
+  logApiCall('DELETE', path, fullUrl);
+  
+  const resp = await fetch(fullUrl, { method: 'DELETE', ...(init || {}) });
+  
+  console.log(`[API] Response status: ${resp.status}`);
+  
   if (!resp.ok) {
     const data = await parseJsonSafe<ErrorEnvelope>(resp);
     const msg = data?.error?.message || `${resp.status} ${resp.statusText}`;
+    console.error(`[API] Error: ${msg}`);
     const err: any = new Error(msg);
     err.status = resp.status;
     throw err;
   }
+  
+  console.log('[API] Success');
 }
 
 export async function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
@@ -196,8 +240,41 @@ export interface SessionListItem {
   selected_models?: string[];
   default_tries?: number;
 }
-export const getSessions = () => getJSON<SessionListItem[]>(`/sessions`);
+export const getSessions = () => {
+  console.log('[API] getSessions called');
+  console.log('[API] Current API_BASE:', API_BASE);
+  console.log('[API] window.API_BASE:', (window as any).API_BASE);
+  return getJSON<SessionListItem[]>(`/sessions`);
+};
+
 export const deleteSession = (session_id: string) => del(`/sessions/${session_id}`);
+
+// Debug function to test current API base
+export const debugApiBase = () => {
+  const info = {
+    API_BASE,
+    windowApiBase: (window as any).API_BASE,
+    metaEnv: (import.meta as any).env?.VITE_API_BASE
+  };
+  console.log('[API Debug]', info);
+  return info;
+};
+
+// Test connection to backend
+export const testBackendConnection = async () => {
+  console.log('[API] Testing backend connection...');
+  console.log('[API] API_BASE:', API_BASE);
+  
+  try {
+    const response = await fetch(`${API_BASE}/health`);
+    const data = await response.json();
+    console.log('[API] Health check response:', data);
+    return { success: true, data };
+  } catch (error) {
+    console.error('[API] Health check failed:', error);
+    return { success: false, error };
+  }
+};
 
 // --- Prompt Settings ---
 export interface PromptSettingsRes { 
