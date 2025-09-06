@@ -43,12 +43,7 @@ export const useAssessments = () => {
   return context;
 };
 
-// Token counts for effort level mapping
-const EFFORT_TO_TOKENS = {
-  low: 4096,    // Increased from 1024 to handle multiple questions
-  medium: 8192,
-  high: 32768
-} as const;
+// OpenRouter handles effort level mapping automatically, no need for manual token counts
 
 // Convert frontend reasoning config to OpenRouter format
 function convertReasoningToOpenRouterFormat(
@@ -64,46 +59,17 @@ function convertReasoningToOpenRouterFormat(
   
   models.forEach((model, index) => {
     const reasoning = reasoningBySelection[index];
-    if (!reasoning || reasoning.level === 'none') return;
+    if (!reasoning) return;
     
-    const modelId = model.toLowerCase();
-    
-    // Determine if model supports effort-based or token-based reasoning
-    const supportsEffort = 
-      modelId.includes('anthropic/') ||
-      modelId.includes('mistral/magistral') ||
-      modelId.includes('google/gemini-2.5') ||
-      modelId.includes('google/gemini-2.0') ||
-      modelId.includes('z-ai/glm');
-      
-    const supportsMaxTokens = 
-      modelId.includes('openai/') ||
-      modelId.includes('deepseek/') ||
-      (modelId.includes('qwen/') && modelId.includes('thinking'));
-    
-    // Map to OpenRouter format based on model and reasoning type
-    if (reasoning.level === 'custom' && reasoning.tokens) {
-      // Custom token-based reasoning
-      if (supportsMaxTokens) {
-        perModelReasoning[model] = { max_tokens: reasoning.tokens };
-        hasAnyReasoning = true;
-      } else if (supportsEffort) {
-        // Fallback to high effort if model doesn't support max_tokens
-        perModelReasoning[model] = { effort: 'high' };
-        hasAnyReasoning = true;
-      }
-    } else if (reasoning.level !== 'custom') {
-      // Effort-based reasoning (low/medium/high)
-      if (supportsEffort) {
-        perModelReasoning[model] = { effort: reasoning.level };
-        hasAnyReasoning = true;
-      } else if (supportsMaxTokens) {
-        // Map effort levels to token counts for models that only support max_tokens
-        perModelReasoning[model] = { 
-          max_tokens: EFFORT_TO_TOKENS[reasoning.level as keyof typeof EFFORT_TO_TOKENS] || 8192 
-        };
-        hasAnyReasoning = true;
-      }
+    // Map to OpenRouter format - OpenRouter handles model compatibility automatically
+    if (reasoning.level === 'none') {
+      // When no reasoning is selected, use exclude: true
+      perModelReasoning[model] = { exclude: true };
+      hasAnyReasoning = true;
+    } else if (reasoning.level === 'low' || reasoning.level === 'medium' || reasoning.level === 'high') {
+      // Effort-based reasoning (low/medium/high) - OpenRouter handles this automatically
+      perModelReasoning[model] = { effort: reasoning.level };
+      hasAnyReasoning = true;
     }
   });
   
@@ -210,13 +176,42 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         fetchWithRetry<ResultsErrorsRes>(() => getResultErrors(sessionId)),
       ] as const);
 
+      // Backend returns question_id when loading results
+      console.log('[loadAssessmentResults] Raw questions from backend:', qRes.questions?.slice(0, 3));
       const questions = [...(qRes.questions || [])]
-        .sort((a: QuestionConfigQuestion, b: QuestionConfigQuestion) => a.number - b.number)
-        .map((q: QuestionConfigQuestion) => ({ number: q.number, text: q.question_id }));
+        .sort((a: QuestionConfigQuestion, b: QuestionConfigQuestion) => {
+          // Backend returns question_id like "DES.12", "MAI.1b(ii)"
+          const aId = a.question_id || a.question_number || '';
+          const bId = b.question_id || b.question_number || '';
+          
+          // Try to extract prefix and number for sorting
+          const aMatch = aId.match(/([A-Z]+)\.?(\d+)/i);
+          const bMatch = bId.match(/([A-Z]+)\.?(\d+)/i);
+          
+          if (aMatch && bMatch) {
+            // Compare prefixes first (DES vs MAI)
+            const prefixCompare = aMatch[1].localeCompare(bMatch[1]);
+            if (prefixCompare !== 0) return prefixCompare;
+            // Then compare numbers
+            const aNum = parseInt(aMatch[2]) || 0;
+            const bNum = parseInt(bMatch[2]) || 0;
+            if (aNum !== bNum) return aNum - bNum;
+          }
+          
+          // Fallback to string comparison
+          return aId.localeCompare(bId);
+        })
+        .map((q: QuestionConfigQuestion) => ({ 
+          number: 0, // Not used for display
+          text: q.question_id || q.question_number || '' 
+        }));
 
       // Map question_id -> number for discrepancy question lists
       const qidToNumber: Record<string, number> = {};
-      (qRes.questions || []).forEach((q) => { qidToNumber[q.question_id] = q.number; });
+      (qRes.questions || []).forEach((q) => { 
+        const qid = q.question_id || q.question_number;
+        qidToNumber[qid] = parseInt(qid) || 0; 
+      });
 
       const totals = statsRes.totals?.total_marks_awarded_by_model_try || {} as Record<string, Record<string, number>>;
       const disc = statsRes.discrepancies_by_model_try || {} as Record<string, Record<string, any>>;
@@ -249,18 +244,39 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
             const questionFeedback = (qRes.questions || [])
               .slice()
-              .sort((a: QuestionConfigQuestion, b: QuestionConfigQuestion) => a.number - b.number)
+              .sort((a: QuestionConfigQuestion, b: QuestionConfigQuestion) => {
+                const aId = a.question_id || a.question_number || '';
+                const bId = b.question_id || b.question_number || '';
+                const aMatch = aId.match(/([A-Z]+)\.?(\d+)/i);
+                const bMatch = bId.match(/([A-Z]+)\.?(\d+)/i);
+                
+                if (aMatch && bMatch) {
+                  const prefixCompare = aMatch[1].localeCompare(bMatch[1]);
+                  if (prefixCompare !== 0) return prefixCompare;
+                  const aNum = parseInt(aMatch[2]) || 0;
+                  const bNum = parseInt(bMatch[2]) || 0;
+                  if (aNum !== bNum) return aNum - bNum;
+                }
+                
+                return aId.localeCompare(bId);
+              })
               .map((q: QuestionConfigQuestion) => {
-                const itemsForModel = (byQ[q.question_id]?.[model] || []) as ResultItem[];
+                const qid = q.question_id || q.question_number; // Backend returns question_id
+                const itemsForModel = (byQ[qid]?.[model] || []) as ResultItem[];
                 const item = itemsForModel.find((it: ResultItem) => it.try_index === tryIndex) || null;
                 const markVal = item?.marks_awarded;
-                const markStr = `${markVal ?? 0}/${q.max_marks}`;
+                const maxMark = q.max_mark || q.max_marks || 0;
+                const markStr = `${markVal ?? 0}/${maxMark}`;
                 return {
-                  questionId: q.question_id,
+                  questionId: qid,
                   feedback: item?.rubric_notes || '',
                   mark: markStr,
                 };
               });
+            
+            // Token usage would come from the backend if it tracks it
+            // For now, it's not available in the current backend implementation
+            const tokenUsage = undefined;
           // Attach failure reasons from errors endpoint
           const errs = (errorsByModelTry[model] && errorsByModelTry[model][String(tryIndex)]) || [];
           const failureReasons = errs
@@ -268,21 +284,22 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               || (typeof e?.message === 'string' && e.message.trim())
               || JSON.stringify(e))
             .filter((s: string) => !!s);
-          return {
-            attemptNumber: tryIndex,
-            discrepancies100,
-            questionDiscrepancies100,
-            zpfDiscrepancies,
-            zpfQuestionDiscrepancies,
-            rangeDiscrepancies,
-            rangeQuestionDiscrepancies,
-            totalScore,
-            questionFeedback,
-            lt100Questions,
-            zpfQuestions,
-            rangeQuestions,
-            failureReasons,
-          };
+            return {
+              attemptNumber: tryIndex,
+              discrepancies100,
+              questionDiscrepancies100,
+              zpfDiscrepancies,
+              zpfQuestionDiscrepancies,
+              rangeDiscrepancies,
+              rangeQuestionDiscrepancies,
+              totalScore,
+              questionFeedback,
+              lt100Questions,
+              zpfQuestions,
+              rangeQuestions,
+              failureReasons,
+              tokenUsage: undefined, // Token usage not available for new assessments yet
+            };
         });
 
         const avg = (key: keyof (typeof attempts)[number]) => {
@@ -307,7 +324,8 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       });
 
       const totalMaxMarks = (statsRes as any)?.totals?.total_max_marks ?? 0;
-      const mapped: AssessmentResults = { modelResults, questions, totalMaxMarks };
+      const humanGrades = statsRes.human_marks_by_qid || {};
+      const mapped: AssessmentResults = { modelResults, questions, totalMaxMarks, humanGrades };
       setAssessments(prev => prev.map(a => (a.id === sessionId ? { ...a, results: mapped } : a)));
     } catch (e) {
       console.error('Failed to load assessment results:', e);
@@ -375,38 +393,13 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           const reasoning = assessmentData.reasoningBySelection?.[index];
           let reasoningConfig: any = undefined;
           
-          if (reasoning && reasoning.level !== 'none') {
-            const modelId = model.toLowerCase();
-            
-            // Determine model capabilities
-            const supportsEffort = 
-              modelId.includes('anthropic/') ||
-              modelId.includes('mistral/magistral') ||
-              modelId.includes('google/gemini-2.5') ||
-              modelId.includes('google/gemini-2.0') ||
-              modelId.includes('z-ai/glm');
-              
-            const supportsMaxTokens = 
-              modelId.includes('openai/') ||
-              modelId.includes('deepseek/') ||
-              modelId.includes('qwen/') ||
-              modelId.includes('o1-');
-            
-            if (reasoning.level === 'custom' && reasoning.tokens) {
-              // Custom token-based reasoning
-              if (supportsMaxTokens || modelId.includes('o1-')) {
-                reasoningConfig = { max_tokens: reasoning.tokens };
-              } else if (supportsEffort) {
-                reasoningConfig = { effort: 'high' };
-              }
-            } else if (reasoning.level !== 'custom') {
-              // Effort-based reasoning
-              if (supportsEffort) {
-                reasoningConfig = { effort: reasoning.level };
-              } else if (supportsMaxTokens) {
-                const tokenMap = { low: 1024, medium: 8192, high: 32768 };
-                reasoningConfig = { max_tokens: tokenMap[reasoning.level as keyof typeof tokenMap] || 8192 };
-              }
+          if (reasoning) {
+            if (reasoning.level === 'none') {
+              // When no reasoning is selected, use exclude: true
+              reasoningConfig = { exclude: true };
+            } else if (reasoning.level === 'low' || reasoning.level === 'medium' || reasoning.level === 'high') {
+              // Effort-based reasoning (low/medium/high) - OpenRouter handles this automatically
+              reasoningConfig = { effort: reasoning.level };
             }
           }
           
@@ -454,13 +447,24 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const [resultsRes, statsRes, errorsRes] = await Promise.all([resultsPromise, statsPromise, errorsPromise] as const);
 
         // Transform backend responses to AssessmentResults shape
+        // For new assessments, questionsPayload has question_number from user input
         const questions = [...questionsPayload]
-          .sort((a, b) => a.number - b.number)
-          .map(q => ({ number: q.number, text: q.question_id }));
+          .sort((a, b) => {
+            const aNum = parseInt(a.question_number) || 0;
+            const bNum = parseInt(b.question_number) || 0;
+            if (aNum !== bNum) return aNum - bNum;
+            return (a.question_number || '').localeCompare(b.question_number || '');
+          })
+          .map(q => ({ 
+            number: parseInt(q.question_number) || 0, 
+            text: q.question_number 
+          }));
 
-        // Map question_id -> number for discrepancy question lists
+        // Map question_number -> number for discrepancy question lists
         const qidToNumber: Record<string, number> = {};
-        questionsPayload.forEach((q) => { qidToNumber[q.question_id] = q.number; });
+        questionsPayload.forEach((q) => { 
+          qidToNumber[q.question_number] = parseInt(q.question_number) || 0; 
+        });
 
         const totals = statsRes.totals?.total_marks_awarded_by_model_try || {};
         const disc = statsRes.discrepancies_by_model_try || {};
@@ -492,14 +496,21 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           const rangeQuestions = ((d.range?.questions as string[] | undefined) || [])
 
             const questionFeedback = questionsPayload
-              .sort((a, b) => a.number - b.number)
+              .sort((a, b) => {
+                const aNum = parseInt(a.question_number) || 0;
+                const bNum = parseInt(b.question_number) || 0;
+                if (aNum !== bNum) return aNum - bNum;
+                return (a.question_number || '').localeCompare(b.question_number || '');
+              })
               .map(q => {
-                const itemsForModel = (byQ[q.question_id]?.[model] || []) as ResultItem[];
+                const qid = q.question_id || q.question_number;
+                const itemsForModel = (byQ[qid]?.[model] || []) as ResultItem[];
                 const item = itemsForModel.find((it: ResultItem) => it.try_index === tryIndex) || null;
                 const markVal = item?.marks_awarded;
-                const markStr = `${markVal ?? 0}/${q.max_marks}`;
+                const maxMark = q.max_mark || q.max_marks || 0;
+                const markStr = `${markVal ?? 0}/${maxMark}`;
                 return {
-                  questionId: q.question_id,
+                  questionId: qid,
                   feedback: item?.rubric_notes || '',
                   mark: markStr,
                 };
@@ -511,6 +522,19 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 || (typeof e?.message === 'string' && e.message.trim())
                 || JSON.stringify(e))
               .filter((s: string) => !!s);
+            
+            // Extract token usage from the first available result item for this model/try
+            const tokenUsage = (() => {
+              for (const qid of Object.keys(byQ)) {
+                const itemsForModel = (byQ[qid]?.[model] || []) as ResultItem[];
+                const item = itemsForModel.find((it: ResultItem) => it.try_index === tryIndex);
+                if (item?.token_usage) {
+                  return item.token_usage;
+                }
+              }
+              return undefined;
+            })();
+            
             return {
               attemptNumber: tryIndex,
               discrepancies100,
@@ -525,6 +549,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               zpfQuestions,
               rangeQuestions,
               failureReasons,
+              tokenUsage,
             };
           });
 
@@ -550,7 +575,8 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         });
 
         const totalMaxMarks = (statsRes as any)?.totals?.total_max_marks ?? 0;
-        const mapped: AssessmentResults = { modelResults, questions, totalMaxMarks };
+        const humanGrades = humanMarks; // Use the human marks we already have
+        const mapped: AssessmentResults = { modelResults, questions, totalMaxMarks, humanGrades };
         setComplete(mapped);
       } catch (e) {
         console.error('Assessment creation failed:', e);

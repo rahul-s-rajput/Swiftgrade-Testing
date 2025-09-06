@@ -84,20 +84,9 @@ function detectReasoningCapabilities(model: OpenRouterModel) {
 
   let reasoningType: ReasoningType = 'none';
   if (hasReasoningParam || hasIncludeReasoning) {
-    const id = model.id.toLowerCase();
-    const supportsEffort =
-      id.includes('anthropic/') ||
-      id.includes('mistral/magistral') ||
-      id.includes('google/gemini-2.5') ||
-      id.includes('z-ai/glm');
-    const supportsMaxTokens =
-      id.includes('openai/') ||
-      id.includes('deepseek/') ||
-      (id.includes('qwen/') && id.includes('thinking'));
-    if (supportsEffort && supportsMaxTokens) reasoningType = 'both';
-    else if (supportsEffort) reasoningType = 'effort';
-    else if (supportsMaxTokens) reasoningType = 'max_tokens';
-    else reasoningType = 'effort'; // default to effort if unknown but has reasoning
+    // All reasoning models now use effort-based reasoning (low/medium/high)
+    // OpenRouter handles the conversion internally for different model types
+    reasoningType = 'effort';
   }
 
   return {

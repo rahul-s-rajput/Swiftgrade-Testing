@@ -1,3 +1,61 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Smooth animations for drag and drop */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Prevent text selection during drag */
+.no-select {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Smooth transitions for drag states */
+* {
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+}
+
+/* Disable native drag ghost image for images in file upload */
+.file-upload-preview img {
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+/* Ensure drop zones are properly layered */
+[data-drop-zone-id] {
+  position: relative;
+  z-index: 10;
+}
+
+/* Smooth hover effects */
+[data-drop-zone-id]:hover {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Prevent drag selection highlight */
+::selection {
+  background-color: rgba(59, 130, 246, 0.3);
+}
+
+::-moz-selection {
+  background-color: rgba(59, 130, 246, 0.3);
+}

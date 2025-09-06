@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, AlertCircle, Upload, Sparkles } from 'lucide-react';
 import { useAssessments } from '../context/AssessmentContext';
-import { FileUpload } from '../components/FileUpload';
+import { FileUpload } from '../components/FileUploadHTML5';
 import { MultiSelect } from '../components/MultiSelect';
 import { NumberInput } from '../components/NumberInput';
 import { useOpenRouterModels } from '../hooks/useOpenRouterModels';
@@ -131,6 +131,28 @@ export const NewAssessment: React.FC = () => {
     setIsSubmitting(true);
 
     try {
+      // Log final reasoning configuration before submission
+      console.log('[NewAssessment] Submitting assessment with reasoning configuration:', {
+        assessmentName: formData.name,
+        selectedModels: formData.selectedModels,
+        reasoningBySelection: reasoningBySelection,
+        modelReasoningDetails: formData.selectedModels.map((modelId, index) => {
+          const modelInfo = modelInfoById?.[modelId];
+          const model = models.find(m => m.id === modelId);
+          const reasoning = reasoningBySelection[index];
+          return {
+            modelId,
+            modelName: model?.name || 'Unknown',
+            modelIndex: index,
+            supportsReasoning: modelInfo?.supportsReasoning || false,
+            reasoningType: modelInfo?.reasoningType || 'none',
+            reasoningLevel: reasoning?.level || 'none',
+            reasoningTokens: reasoning?.tokens,
+            willUseReasoning: reasoning?.level !== 'none' && (modelInfo?.supportsReasoning || false)
+          };
+        })
+      });
+
       // Fire-and-forget: start assessment creation and grading in background
       void addAssessment({
         name: formData.name,
@@ -235,9 +257,9 @@ export const NewAssessment: React.FC = () => {
                   className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-200 ${
                     errors.questions ? 'border-red-300 focus:border-red-500' : 'border-slate-300 focus:border-blue-500'
                   } bg-white/80 backdrop-blur-sm resize-none`}
-                  placeholder='[{"question_id":"Q1","max_marks":10},{"question_id":"Q2","max_marks":15},{"question_id":"Q3","max_marks":20}]'
+                  placeholder='[{"question_number":"DES.1","max_mark":1},{"question_number":"DES.2","max_mark":1}]'
                 />
-                <p className="text-xs text-slate-500 mt-1">Enter a JSON array with question_id and max_marks for each question</p>
+                <p className="text-xs text-slate-500 mt-1">Enter a JSON array with question_number and max_mark for each question</p>
                 {errors.questions && (
                   <div className="mt-2 flex items-center text-sm text-red-600">
                     <AlertCircle className="w-4 h-4 mr-1" />
@@ -277,6 +299,16 @@ export const NewAssessment: React.FC = () => {
                       const prev = formData.selectedModels;
                       // Append case (allowDuplicates adds to end)
                       if (values.length === prev.length + 1 && prev.every((v, i) => v === values[i])) {
+                        const newModelId = values[values.length - 1];
+                        const modelInfo = modelInfoById?.[newModelId];
+                        const model = models.find(m => m.id === newModelId);
+                        console.log('[NewAssessment] Model selected:', {
+                          modelId: newModelId,
+                          modelName: model?.name || 'Unknown',
+                          supportsReasoning: modelInfo?.supportsReasoning || false,
+                          reasoningType: modelInfo?.reasoningType || 'none',
+                          totalSelectedModels: values.length
+                        });
                         setFormData({ ...formData, selectedModels: values });
                         setReasoningBySelection(prevReasoning => [...prevReasoning, { level: 'none' }]);
                         return;
@@ -287,11 +319,25 @@ export const NewAssessment: React.FC = () => {
                         for (let i = 0; i < values.length; i++) {
                           if (values[i] !== prev[i]) { removedIndex = i; break; }
                         }
+                        const removedModelId = prev[removedIndex];
+                        const model = models.find(m => m.id === removedModelId);
+                        console.log('[NewAssessment] Model removed:', {
+                          modelId: removedModelId,
+                          modelName: model?.name || 'Unknown',
+                          removedIndex,
+                          remainingModels: values.length
+                        });
                         setFormData({ ...formData, selectedModels: values });
                         setReasoningBySelection(prevReasoning => prevReasoning.filter((_, i) => i !== removedIndex));
                         return;
                       }
                       // Fallback: length unchanged or other reorder - realign by index
+                      console.log('[NewAssessment] Models reordered or bulk changed:', {
+                        previousCount: prev.length,
+                        newCount: values.length,
+                        previousModels: prev.map(id => ({ id, name: models.find(m => m.id === id)?.name || 'Unknown' })),
+                        newModels: values.map(id => ({ id, name: models.find(m => m.id === id)?.name || 'Unknown' }))
+                      });
                       setFormData({ ...formData, selectedModels: values });
                       setReasoningBySelection(prevReasoning => values.map((_, i) => prevReasoning[i] || { level: 'none' }));
                     }}
@@ -302,17 +348,14 @@ export const NewAssessment: React.FC = () => {
                     maxPerOption={4}
                     shouldShowChipMenuAt={(id, _index) => !!modelInfoById?.[id]?.supportsReasoning}
                     getChipBadgeAt={(_id, index) => {
-                      const conf = reasoningBySelection[index];
-                      if (!conf || conf.level === 'none') return (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/70 text-slate-600 border">None</span>
-                      );
-                      if (conf.level === 'custom') return (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/70 text-slate-700 border">Custom{conf.tokens ? `: ${conf.tokens}` : ''}</span>
-                      );
-                      return (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/70 text-slate-700 border">{conf.level.charAt(0).toUpperCase() + conf.level.slice(1)}</span>
-                      );
-                    }}
+                       const conf = reasoningBySelection[index];
+                       if (!conf || conf.level === 'none') return (
+                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/70 text-slate-600 border">None</span>
+                       );
+                       return (
+                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/70 text-slate-700 border">{conf.level.charAt(0).toUpperCase() + conf.level.slice(1)}</span>
+                       );
+                     }}
                     onChipMenuRequestAt={(id, index, rect) => {
                       const containerRect = chipMenuContainerRef.current?.getBoundingClientRect();
                       const left = containerRect ? (rect.right - containerRect.left + 6) : (rect.right + 6);
@@ -332,17 +375,11 @@ export const NewAssessment: React.FC = () => {
                         const id = (chipMenu.id as string) || formData.selectedModels[idx];
                         const info = modelInfoById?.[id];
                         const supportsReasoning = info?.supportsReasoning ?? false;
-                        const reasoningType = (info?.reasoningType ?? 'none') as 'effort' | 'max_tokens' | 'both' | 'none';
                         const conf = reasoningBySelection[idx] || { level: 'none' as ReasoningLevel };
                         const options: ReasoningLevel[] = !supportsReasoning
                           ? ['none']
-                          : reasoningType === 'effort'
-                            ? ['none', 'low', 'medium', 'high']
-                            : reasoningType === 'max_tokens'
-                              ? ['none', 'custom']
-                              : ['none', 'low', 'medium', 'high', 'custom'];
+                          : ['none', 'low', 'medium', 'high'];
                         const currentLevel: ReasoningLevel = (options.includes(conf.level) ? conf.level : 'none');
-                        const invalidCustom = currentLevel === 'custom' && (!conf.tokens || conf.tokens < 256);
                         return (
                           <div className="space-y-2">
                             {supportsReasoning ? (
@@ -354,6 +391,17 @@ export const NewAssessment: React.FC = () => {
                                       type="button"
                                       className={`w-full text-left px-2 py-1 rounded text-sm hover:bg-slate-50 ${currentLevel === opt ? 'bg-slate-100' : ''}`}
                                       onClick={() => {
+                                        const modelId = formData.selectedModels[idx];
+                                          const modelInfo = modelInfoById?.[modelId];
+                                          const model = models.find(m => m.id === modelId);
+                                          console.log('[NewAssessment] Reasoning level changed:', {
+                                            modelId,
+                                            modelName: model?.name || 'Unknown',
+                                            modelIndex: idx,
+                                            previousLevel: reasoningBySelection[idx]?.level || 'none',
+                                            newLevel: opt,
+                                            reasoningType: modelInfo?.reasoningType || 'none'
+                                          });
                                         setReasoningBySelection(prev => {
                                           const next = [...prev];
                                           next[idx] = { level: opt };
@@ -365,28 +413,7 @@ export const NewAssessment: React.FC = () => {
                                       {opt.charAt(0).toUpperCase() + opt.slice(1)}
                                     </button>
                                   ))}
-                                  {options.includes('custom') && (
-                                    <div className="px-2 py-1">
-                                      <div className="text-xs text-slate-600 mb-1">Custom tokens (≥ 256)</div>
-                                      <input
-                                        type="number"
-                                        min={256}
-                                        max={32000}
-                                        className={`w-full px-2 py-1 border rounded-md text-sm ${invalidCustom ? 'border-red-300' : ''}`}
-                                        value={currentLevel === 'custom' ? (conf.tokens ?? '') : ''}
-                                        onChange={(e) => {
-                                          const val = Number(e.target.value);
-                                          setReasoningBySelection(prev => {
-                                            const next = [...prev];
-                                            next[idx] = { level: 'custom', tokens: Number.isFinite(val) ? val : undefined };
-                                            return next;
-                                          });
-                                        }}
-                                        placeholder="e.g. 1024"
-                                      />
-                                      {invalidCustom && <div className="text-[11px] text-red-600 mt-1">Please enter ≥ 256</div>}
-                                    </div>
-                                  )}
+
                                 </div>
                               </>
                             ) : (

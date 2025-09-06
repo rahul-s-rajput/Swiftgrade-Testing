@@ -1,0 +1,154 @@
+[
+  {
+    "question_number": "DES.1",
+    "max_mark": 1
+  },
+  {
+    "question_number": "DES.2",
+    "max_mark": 1
+  },
+  {
+    "question_number": "DES.3",
+    "max_mark": 1
+  },
+  {
+    "question_number": "DES.4",
+    "max_mark": 1
+  },
+  {
+    "question_number": "DES.5",
+    "max_mark": 1
+  },
+  {
+    "question_number": "DES.6",
+    "max_mark": 1
+  },
+  {
+    "question_number": "DES.7",
+    "max_mark": 1
+  },
+  {
+    "question_number": "DES.8",
+    "max_mark": 1
+  },
+  {
+    "question_number": "DES.9",
+    "max_mark": 1
+  },
+  {
+    "question_number": "DES.10",
+    "max_mark": 1
+  },
+  {
+    "question_number": "DES.11a",
+    "max_mark": 0.5
+  },
+  {
+    "question_number": "DES.11b",
+    "max_mark": 0.5
+  },
+  {
+    "question_number": "DES.12",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.1a(i)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.1a(ii)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.1b(i)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.1b(ii)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.1c(i)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.1c(ii)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.1d(i)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.1d(ii)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.2a",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.2b",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.3a",
+    "max_mark": 2
+  },
+  {
+    "question_number": "MAI.3b",
+    "max_mark": 2
+  },
+  {
+    "question_number": "MAI.4a",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.4b",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.5",
+    "max_mark": 2
+  },
+  {
+    "question_number": "MAI.6a(i)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.6a(ii)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.6b(i)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.6b(ii)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.6c(i)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.6c(ii)",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.6d",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.6e",
+    "max_mark": 1
+  },
+  {
+    "question_number": "MAI.7",
+    "max_mark": 3
+  },
+  {
+    "question_number": "MAI.8",
+    "max_mark": 3
+  }
+]

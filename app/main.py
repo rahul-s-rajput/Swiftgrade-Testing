@@ -5,6 +5,8 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
+from starlette.middleware.base import BaseHTTPMiddleware
+import json
 from dotenv import load_dotenv
 
 from .util.errors import http_exception_handler, validation_exception_handler, general_exception_handler
@@ -134,6 +136,38 @@ try:
 except Exception:
     pass
 
+class LoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        logger = logging.getLogger(__name__)
+        
+        # Log request
+        body = await request.body()
+        try:
+            body_str = body.decode('utf-8')
+        except UnicodeDecodeError:
+            body_str = f"<binary data: {len(body)} bytes>"
+        
+        logger.info(f"REQUEST: {request.method} {request.url} Headers: {dict(request.headers)} Body: {body_str}")
+        
+        # Call next
+        response = await call_next(request)
+        
+        # Log response
+        response_body = b""
+        async for chunk in response.body_iterator:
+            response_body += chunk
+        
+        try:
+            response_body_str = response_body.decode('utf-8')
+        except UnicodeDecodeError:
+            response_body_str = f"<binary data: {len(response_body)} bytes>"
+        
+        logger.info(f"RESPONSE: {response.status_code} Headers: {dict(response.headers)} Body: {response_body_str}")
+        
+        # Return new response with captured body
+        from starlette.responses import StreamingResponse
+        return StreamingResponse(iter([response_body]), status_code=response.status_code, headers=dict(response.headers))
+
 app = FastAPI(title="Essay Grading Prototype Backend")
 
 # Add startup diagnostics
@@ -205,6 +239,9 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+# Add logging middleware to capture full API requests and responses
+app.add_middleware(LoggingMiddleware)
 
 # Error handlers
 app.add_exception_handler(RequestValidationError, validation_exception_handler)

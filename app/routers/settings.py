@@ -3,6 +3,7 @@ from ..supabase_client import supabase
 from ..schemas import PromptSettingsReq, PromptSettingsRes
 import httpx
 import os
+from datetime import datetime
 
 
 router = APIRouter()
@@ -285,6 +286,8 @@ async def get_models():
             data = response.json()
             model_count = len(data.get('data', [])) if isinstance(data.get('data'), list) else 0
             logger.info(f"✅ Successfully fetched {model_count} models")
+            
+
             
             return data
             

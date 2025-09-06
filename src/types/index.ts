@@ -24,6 +24,7 @@ export interface AssessmentResults {
   modelResults: ModelResult[];
   questions: Question[];
   totalMaxMarks: number;
+  humanGrades?: Record<string, number>; // question_id -> human grade
 }
 
 export interface ModelResult {
@@ -56,6 +57,13 @@ export interface Attempt {
   rangeQuestions?: string[];
   // New: failure reasons when a model attempt failed to parse/validate
   failureReasons?: string[];
+  // Token usage tracking
+  tokenUsage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    reasoning_tokens?: number;
+    total_tokens?: number;
+  };
 }
 
 export interface QuestionFeedback {

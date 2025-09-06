@@ -75,6 +75,18 @@ async def _call_openrouter(
         "messages": messages,
         "provider": {"allow_fallbacks": False},
     }
+    
+    # Force specific provider for Claude models to avoid routing issues
+    if "claude" in model.lower():
+        # Specify Anthropic as the required provider for Claude models
+        payload["provider"]["require_parameters"] = True
+        payload["provider"]["order"] = ["Anthropic"]  # Only use Anthropic
+        # Alternative: You can also use specific provider routing
+        # payload["route"] = "anthropic"  # If OpenRouter supports this
+        
+        if OPENROUTER_DEBUG:
+            logging.info("🎯 Forcing Anthropic provider for Claude model: %s", model)
+    
     # Only add reasoning to payload if it's not None and not empty
     if reasoning is not None and reasoning:
         payload["reasoning"] = reasoning
@@ -89,23 +101,37 @@ async def _call_openrouter(
     last_retry_after: str | None = None
     for attempt in range(3):
         try:
+            # Always log request directly to console
+            logging.info("\n" + "-"*80)
+            logging.info("🚀 OPENROUTER API CALL - Attempt %s", attempt + 1)
+            logging.info("-"*80)
+            logging.info("🌐 URL: %s", url)
+            logging.info("🤖 Model: %s", model)
+            if reasoning is not None and reasoning:
+                logging.info("🧠 Reasoning for this call: %s", json.dumps(reasoning, indent=2))
+            else:
+                logging.info("🧠 No reasoning for this call")
+            logging.info("📦 FULL REQUEST PAYLOAD:")
+            logging.info(_json_pp(payload))
+            logging.info("-"*80)
+            
+            # Keep original debug logging if enabled
             if OPENROUTER_DEBUG:
                 try:
-                    preview = json.dumps(payload, indent=2)[:1500]
-                except Exception:
-                    preview = "<payload-not-serializable>"
-                logging.info("\n" + "-"*60)
-                logging.info("🚀 OPENROUTER API CALL - Attempt %s", attempt + 1)
-                logging.info("-"*60)
-                logging.info("🌐 URL: %s", url)
-                logging.info("🤖 Model: %s", model)
-                if reasoning is not None and reasoning:
-                    logging.info("🧠 Reasoning for this call: %s", json.dumps(reasoning, indent=2))
-                else:
-                    logging.info("🧠 No reasoning for this call")
-                logging.info("📦 Payload Preview:")
-                logging.info(preview)
-                logging.info("-"*60)
+                    logging.info("\n" + "-"*80)
+                    logging.info("🚀 OPENROUTER API CALL - Attempt %s", attempt + 1)
+                    logging.info("-"*80)
+                    logging.info("🌐 URL: %s", url)
+                    logging.info("🤖 Model: %s", model)
+                    if reasoning is not None and reasoning:
+                        logging.info("🧠 Reasoning for this call: %s", json.dumps(reasoning, indent=2))
+                    else:
+                        logging.info("🧠 No reasoning for this call")
+                    logging.info("📦 FULL REQUEST PAYLOAD:")
+                    logging.info(_json_pp(payload))
+                    logging.info("-"*80)
+                except Exception as e:
+                    logging.error("Failed to log full request payload: %s", str(e))
 
             resp = await client.post(url, json=payload, timeout=60.0)
             # Persist full raw response body
@@ -118,22 +144,31 @@ async def _call_openrouter(
                     session_id,
                     f"RESPONSE model={model} instance_id={instance_id or ''} try={try_index or ''} status={resp.status_code}\n{body_text}",
                 )
-            if OPENROUTER_DEBUG:
-                try:
-                    body_prev = (resp.text or "")[:1500]
-                    # Try to pretty-print JSON response
-                    try:
-                        json_resp = json.loads(resp.text)
-                        body_prev = json.dumps(json_resp, indent=2)[:1500]
-                    except:
-                        pass
-                except Exception:
-                    body_prev = "<no-text>"
+            # Always log response directly to console
+            try:
                 logging.info("✅ OPENROUTER RESPONSE")
                 logging.info("📊 Status Code: %s", resp.status_code)
-                logging.info("📄 Response Preview:")
-                logging.info(body_prev)
-                logging.info("-"*60 + "\n")
+                logging.info("📄 FULL RESPONSE BODY:")
+                logging.info(resp.text)
+                
+                # Also save to file to prevent terminal truncation
+                log_dir = "logs"
+                os.makedirs(log_dir, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                log_file = os.path.join(log_dir, f"openrouter_responses_{timestamp}.log")
+                
+                with open(log_file, "a", encoding="utf-8") as f:
+                    f.write(f"\n{'='*80}\n")
+                    f.write(f"TIMESTAMP: {datetime.now().isoformat()}\n")
+                    f.write(f"MODEL: {model}\n")
+                    f.write(f"INSTANCE_ID: {instance_id or 'N/A'}\n")
+                    f.write(f"TRY: {try_index or 'N/A'}\n")
+                    f.write(f"STATUS CODE: {resp.status_code}\n")
+                    f.write(f"RESPONSE BODY:\n{resp.text}\n")
+                    f.write(f"{'='*80}\n")
+                logging.info("-"*80 + "\n")
+            except Exception as e:
+                logging.error("Failed to log full response: %s", str(e))
             if resp.status_code == 429:
                 # Honor Retry-After if present
                 last_retry_after = resp.headers.get("retry-after") or "2"
@@ -141,27 +176,51 @@ async def _call_openrouter(
                 await asyncio.sleep((retry_after or 2) * (2 ** attempt))
                 continue
             resp.raise_for_status()
-            return resp.json()
+            
+            # Try to parse JSON, but catch and log the actual response if it fails
+            try:
+                return resp.json()
+            except json.JSONDecodeError as json_err:
+                # Log the actual response content for debugging
+                response_text = resp.text
+                logging.error("Failed to parse JSON response. Status: %s", resp.status_code)
+                logging.error("Response headers: %s", dict(resp.headers))
+                logging.error("Response text (first 1000 chars): %s", response_text[:1000])
+                logging.error("Response text (last 1000 chars): %s", response_text[-1000:] if len(response_text) > 1000 else "")
+                logging.error("Total response length: %s characters", len(response_text))
+                
+                # Save full response for debugging
+                if session_id:
+                    _append_session_log(
+                        session_id,
+                        f"JSON_PARSE_ERROR model={model} status={resp.status_code}\nResponse:\n{response_text}"
+                    )
+                
+                # Re-raise with more context
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"OpenRouter returned invalid JSON. Response starts with: {response_text[:100]}"
+                ) from json_err
         except httpx.HTTPStatusError as e:
-            if OPENROUTER_DEBUG:
-                logging.error("\n" + "-"*60)
-                logging.error("❌ OPENROUTER API ERROR - Attempt %s", attempt + 1)
-                logging.error("-"*60)
-                logging.error("📊 Status Code: %s", e.response.status_code if e.response else "Unknown")
-                logging.error("📄 Error Details: %s", str(e))
-                if e.response:
+            # Always log errors directly to console
+            logging.error("\n" + "-"*60)
+            logging.error("❌ OPENROUTER API ERROR - Attempt %s", attempt + 1)
+            logging.error("-"*60)
+            logging.error("📊 Status Code: %s", e.response.status_code if e.response else "Unknown")
+            logging.error("📄 Error Details: %s", str(e))
+            if e.response:
+                try:
+                    error_body = e.response.text[:1000]
                     try:
-                        error_body = e.response.text[:1000]
-                        try:
-                            error_json = json.loads(e.response.text)
-                            error_body = json.dumps(error_json, indent=2)[:1000]
-                        except:
-                            pass
-                        logging.error("📄 Response Body:")
-                        logging.error(error_body)
+                        error_json = json.loads(e.response.text)
+                        error_body = json.dumps(error_json, indent=2)[:1000]
                     except:
                         pass
-                logging.error("-"*60 + "\n")
+                    logging.error("📄 Response Body:")
+                    logging.error(error_body)
+                except:
+                    pass
+            logging.error("-"*60 + "\n")
             
             if attempt == 2:
                 if e.response is not None and e.response.status_code == 429:
@@ -181,14 +240,14 @@ async def _call_openrouter(
                 raise http_exc
             await asyncio.sleep(2 ** attempt)
         except Exception as e:
-            if OPENROUTER_DEBUG:
-                logging.error("\n" + "-"*60)
-                logging.error("⚠️ UNEXPECTED ERROR - Attempt %s", attempt + 1)
-                logging.error("-"*60)
-                logging.error("🐛 Exception Type: %s", type(e).__name__)
-                logging.error("📄 Error Message: %s", str(e))
-                logging.exception("Full traceback:")
-                logging.error("-"*60 + "\n")
+            # Always log unexpected errors directly to console
+            logging.error("\n" + "-"*60)
+            logging.error("⚠️ UNEXPECTED ERROR - Attempt %s", attempt + 1)
+            logging.error("-"*60)
+            logging.error("🐛 Exception Type: %s", type(e).__name__)
+            logging.error("📄 Error Message: %s", str(e))
+            logging.exception("Full traceback:")
+            logging.error("-"*60 + "\n")
             if attempt == 2:
                 raise HTTPException(status_code=500, detail=f"OpenRouter request failed: {e}")
             await asyncio.sleep(2 ** attempt)
@@ -221,9 +280,9 @@ def _build_messages(student_urls: List[str], key_urls: List[str], questions: Lis
     """Build OpenRouter chat messages using DB-configured templates when available.
 
     Placeholders supported:
-    - In system template: [Answer key], [Question list]
+    - In system template: [Answer key], [Question list], [Response schema]
     - In user template: [Student assessment]
-    We also attach image_url parts so models can process images reliably.
+    Placeholders are replaced with actual image_url objects where appropriate.
     """
 
     # Normalize URLs to be safely fetchable by providers
@@ -334,45 +393,112 @@ def _build_messages(student_urls: List[str], key_urls: List[str], questions: Lis
             logging.info("✅ Using custom templates from settings")
             logging.info("-"*60 + "\n")
         
-        # Render placeholders
-        questions_list = "\n".join([f"{q['question_id']} (max {q['max_marks']})" for q in questions])
-        # Use custom schema template if provided, otherwise use default
+        # Prepare replacement values
+        questions_list = json.dumps({
+            "question_list": [
+                {
+                    "question_number": q['question_number'],
+                    "max_mark": q['max_mark']
+                }
+                for q in questions
+            ]
+        }, indent=2)
+        
+        # Prepare schema text
         if schema_template:
-            # Allow placeholders in schema template too
             schema_text = "\n\n" + schema_template.replace("[Question list]", questions_list)
         else:
-            # Fallback to default schema if not provided
             schema_text = (
                 "\n\nReturn ONLY JSON with this exact schema (no markdown fences, no prose):\n"
                 '{"result":[{"first_name":string,"last_name":string,'
-                '"answers":[{"question_id":string,"marks_awarded":number,"rubric_notes":string}]}]}\n'
-                "Use the question_id values exactly as provided in the Questions list."
+                '"answers":[{"question_number":string,"marks_awarded":number,"rubric_notes":string}]}]}\n'
+                "Use the question_number values exactly as provided in the Questions list."
             )
-        sys_text = (
-            sys_template
-            .replace("[Answer key]", "\n".join(key_urls_norm) if key_urls_norm else "")
-            .replace("[Question list]", questions_list)
-            .replace("[Response schema]", schema_text)
-        )
-        # If [Response schema] placeholder not used, append schema at end for backward compatibility
-        if "[Response schema]" not in sys_template:
-            sys_text = f"{sys_text}{schema_text}"
-        user_text = user_template.replace("[Student assessment]", "\n".join(stu_urls))
-
-        # Compose user content with template text + image parts for reliability
-        user_content: List[Dict[str, Any]] = [
-            {"type": "text", "text": user_text},
-        ]
-        for u in stu_urls:
-            user_content.append({"type": "image_url", "image_url": {"url": u}})
-        if key_urls_norm:
-            user_content.append({"type": "text", "text": "Answer key images:"})
-            for u in key_urls_norm:
-                user_content.append({"type": "image_url", "image_url": {"url": u}})
-
+        
+        # Process system template - replace text placeholders only
+        # System messages must be plain text for compatibility with all models
+        sys_text = sys_template
+        
+        # Replace text-only placeholders in system message
+        if "[Question list]" in sys_text:
+            sys_text = sys_text.replace("[Question list]", questions_list)
+        
+        if "[Response schema]" in sys_text:
+            sys_text = sys_text.replace("[Response schema]", schema_text)
+        elif schema_text:  # Append schema if placeholder not present (backward compatibility)
+            sys_text = sys_text + schema_text
+        
+        # Process user template - build content array with support for all placeholders
+        user_content: List[Dict[str, Any]] = []
+        
+        # Handle multiple placeholders in user message
+        # We need to process the template and replace each placeholder appropriately
+        remaining_template = user_template
+        
+        # Define placeholders and their content
+        placeholders = {
+            "[Answer key]": ("images", key_urls_norm),
+            "[Student assessment]": ("images", stu_urls),
+            "[Question list]": ("text", questions_list),
+            "[Response schema]": ("text", schema_text)
+        }
+        
+        # Find all placeholders in the template and their positions
+        placeholder_positions = []
+        for placeholder, (content_type, content) in placeholders.items():
+            index = remaining_template.find(placeholder)
+            if index != -1:
+                placeholder_positions.append((index, placeholder, content_type, content))
+        
+        # Sort by position
+        placeholder_positions.sort(key=lambda x: x[0])
+        
+        # Process template by splitting at each placeholder
+        if placeholder_positions:
+            current_pos = 0
+            for index, placeholder, content_type, content in placeholder_positions:
+                # Add text before placeholder
+                if index > current_pos:
+                    text_before = remaining_template[current_pos:index]
+                    if text_before.strip():
+                        user_content.append({"type": "text", "text": text_before})
+                
+                # Add placeholder content
+                if content:
+                    if content_type == "images" and content:
+                        # Add image URLs
+                        for url in content:
+                            user_content.append({"type": "image_url", "image_url": {"url": url, "detail": "high"}})
+                    elif content_type == "text" and content:
+                        # Add text content
+                        user_content.append({"type": "text", "text": content})
+                
+                # Move position past the placeholder
+                current_pos = index + len(placeholder)
+            
+            # Add any remaining text after the last placeholder
+            if current_pos < len(remaining_template):
+                text_after = remaining_template[current_pos:]
+                if text_after.strip():
+                    user_content.append({"type": "text", "text": text_after})
+        else:
+            # No placeholders found, use template as is
+            user_content.append({"type": "text", "text": user_template})
+            
+            # Add images at the end if they exist but no placeholders were found
+            if key_urls_norm:
+                user_content.append({"type": "text", "text": "\n\nAnswer key images:"})
+                for url in key_urls_norm:
+                    user_content.append({"type": "image_url", "image_url": {"url": url, "detail": "high"}})
+            
+            if stu_urls:
+                user_content.append({"type": "text", "text": "\n\nStudent test pages:"})
+                for url in stu_urls:
+                    user_content.append({"type": "image_url", "image_url": {"url": url, "detail": "high"}})
+        
         return [
-            {"role": "system", "content": sys_text},
-            {"role": "user", "content": user_content},
+            {"role": "system", "content": sys_text},  # Always plain text for system messages
+            {"role": "user", "content": user_content},  # Content array with text and images
         ]
     else:
         if OPENROUTER_DEBUG:
@@ -394,13 +520,22 @@ def _build_messages(student_urls: List[str], key_urls: List[str], questions: Lis
         {"type": "text", "text": "Grade the student's answers against the answer key."},
     ]
     for u in stu_urls:
-        user_content.append({"type": "image_url", "image_url": {"url": u}})
+        user_content.append({"type": "image_url", "image_url": {"url": u, "detail": "high"}})
     if key_urls_norm:
         user_content.append({"type": "text", "text": "Answer key images:"})
         for u in key_urls_norm:
-            user_content.append({"type": "image_url", "image_url": {"url": u}})
-    q_lines = [f"{q['question_id']} (max {q['max_marks']})" for q in questions]
-    user_content.append({"type": "text", "text": "Questions: " + ", ".join(q_lines)})
+            user_content.append({"type": "image_url", "image_url": {"url": u, "detail": "high"}})
+    # Format questions as JSON structure for consistency
+    questions_json = json.dumps({
+        "question_list": [
+            {
+                "question_number": q['question_number'],
+                "max_mark": q['max_mark']
+            }
+            for q in questions
+        ]
+    }, indent=2)
+    user_content.append({"type": "text", "text": "Questions: " + questions_json})
 
     return [
         {"role": "system", "content": sys_text},
@@ -627,9 +762,18 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
         .order("number")
         .execute()
     )
-    questions: List[Dict[str, Any]] = qs.data or []
-    if not questions:
+    db_questions: List[Dict[str, Any]] = qs.data or []
+    if not db_questions:
         raise _bad_request("no questions configured for session")
+    
+    # Map database fields to the format expected by _build_messages
+    questions = [
+        {
+            "question_number": q["question_id"],  # Map question_id to question_number for LLM
+            "max_mark": q["max_marks"]  # Map max_marks to max_mark for LLM
+        }
+        for q in db_questions
+    ]
 
     # Expand model tries
     items: List[Tuple[str, int, Dict[str, Any] | None, str | None]] = []
@@ -752,9 +896,21 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
     async with httpx.AsyncClient(headers=headers) as client:
         async def run_task(model: str, try_index: int, reasoning: Dict[str, Any] | None, instance_id: str | None):
             async with semaphore:
+                # Force Anthropic provider for Claude models to avoid Google Vertex routing issues
+                adjusted_model = model
+                if "claude" in model.lower():
+                    # If it's a Claude model without explicit provider, add anthropic provider
+                    if not model.startswith("anthropic/"):
+                        adjusted_model = f"anthropic/{model}"
+                    # Also ensure we're not using Google's hosted Claude
+                    adjusted_model = adjusted_model.replace("google/", "anthropic/")
+                    
+                    if OPENROUTER_DEBUG:
+                        logging.info("🔄 Adjusted model name from '%s' to '%s' to force Anthropic provider", model, adjusted_model)
+                
                 data = await _call_openrouter(
                     client,
-                    model,
+                    adjusted_model,
                     messages,
                     reasoning,
                     session_id=payload.session_id,

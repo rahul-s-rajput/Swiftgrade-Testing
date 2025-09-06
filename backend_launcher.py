@@ -8,7 +8,6 @@ This version embeds the FastAPI server directly and handles process cleanup prop
 import sys
 import os
 import argparse
-import logging
 import signal
 import atexit
 from pathlib import Path
@@ -103,11 +102,6 @@ def run_embedded_server(host: str, port: int):
     # Set up environment before importing app modules
     setup_environment()
     
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s"
-    )
     
     try:
         print("Starting embedded FastAPI server...", flush=True)

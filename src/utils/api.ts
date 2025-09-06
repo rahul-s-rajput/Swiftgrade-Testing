@@ -130,7 +130,13 @@ export interface OkRes { ok: boolean }
 export const registerImage = (session_id: string, role: 'student' | 'answer_key', url: string, order_index: number) =>
   postJSON<OkRes>('/images/register', { session_id, role, url, order_index });
 
-export interface QuestionConfigQuestion { question_id: string; number: number; max_marks: number }
+export interface QuestionConfigQuestion { 
+  question_number: string;  // Input field (what user provides)
+  max_mark: number;         // Input field (what user provides)
+  // Backend may also return these alternative field names:
+  question_id?: string;     // Backend storage field
+  max_marks?: number;       // Backend storage field
+}
 export const postQuestionsConfig = (
   session_id: string,
   questions: QuestionConfigQuestion[],
@@ -153,14 +159,16 @@ export async function gradeSingleWithRetry(
     // Add instance ID to differentiate same model with different reasoning
     if (reasoningBySelection && reasoningBySelection[index]) {
       const reasoningConfig = reasoningBySelection[index];
-      if (reasoningConfig && reasoningConfig.level !== 'none') {
+      if (reasoningConfig) {
         // Create unique instance ID based on model and reasoning
         spec.instance_id = `${name}_${index}_${reasoningConfig.level}`;
         
         // Add reasoning config to this specific model
-        if (reasoningConfig.level === 'custom' && reasoningConfig.tokens) {
+        if (reasoningConfig.level === 'none') {
+          spec.reasoning = { exclude: true };
+        } else if (reasoningConfig.level === 'custom' && reasoningConfig.tokens) {
           spec.reasoning = { max_tokens: reasoningConfig.tokens };
-        } else if (reasoningConfig.level !== 'none') {
+        } else if (reasoningConfig.level !== 'custom') {
           spec.reasoning = { effort: reasoningConfig.level };
         }
       }
@@ -205,7 +213,17 @@ export async function gradeSingleWithRetry(
   }
 }
 
-export interface ResultItem { try_index: number; marks_awarded: number | null; rubric_notes: string | null }
+export interface ResultItem { 
+  try_index: number; 
+  marks_awarded: number | null; 
+  rubric_notes: string | null;
+  token_usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    reasoning_tokens?: number;
+    total_tokens?: number;
+  };
+}
 export interface ResultsRes { session_id: string; results_by_question: Record<string, Record<string, ResultItem[]>> }
 export const getResults = (session_id: string) => getJSON<ResultsRes>(`/results/${session_id}`);
 

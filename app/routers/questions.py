@@ -24,38 +24,13 @@ def _normalize_questions(questions: List[Dict[str, Any]]) -> List[QuestionConfig
     """
     normalized = []
     
-    # Check if any question has a number field
-    has_numbers = any('number' in q for q in questions)
-    
-    if has_numbers:
-        # Some questions have numbers - validate they all do and are unique
-        seen_numbers = set()
-        for q in questions:
-            if 'number' not in q:
-                raise _bad_request(
-                    "Mixed format: if any question has a 'number' field, all must have it",
-                    details={"question_id": q.get('question_id')}
-                )
-            number = q['number']
-            if number in seen_numbers:
-                raise _bad_request(
-                    "Duplicate number in questions",
-                    details={"number": number}
-                )
-            seen_numbers.add(number)
-            normalized.append(QuestionConfigQuestion(
-                question_id=q['question_id'],
-                number=number,
-                max_marks=q['max_marks']
-            ))
-    else:
-        # No questions have numbers - auto-generate from array index
-        for idx, q in enumerate(questions, start=1):
-            normalized.append(QuestionConfigQuestion(
-                question_id=q['question_id'],
-                number=idx,
-                max_marks=q['max_marks']
-            ))
+    # Process questions with new format - map to internal schema
+    for idx, q in enumerate(questions, start=1):
+        normalized.append(QuestionConfigQuestion(
+            question_id=q['question_number'],  # Use question_number as question_id
+            number=idx,  # Auto-generate sequential numbers
+            max_marks=q['max_mark']  # Map max_mark to max_marks
+        ))
     
     return normalized
 
@@ -71,9 +46,8 @@ def set_questions_config(payload: QuestionConfigReq) -> OkRes:
     normalized_questions = _normalize_questions(payload.questions)
     
     # Validate uniqueness of question_id
-    seen_qids: Set[str] = set()
-    question_info: Dict[str, float] = {}
-    
+    seen_qids = set()
+    question_info = {}
     for q in normalized_questions:
         if q.question_id in seen_qids:
             raise _bad_request(

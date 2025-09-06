@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, BarChart3, MessageCircle, Trophy, Target, Brain } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BarChart3, MessageCircle, Trophy, Target, Brain, Info } from 'lucide-react';
 import { useAssessments } from '../context/AssessmentContext';
 
 export const Review: React.FC = () => {
@@ -10,6 +10,7 @@ export const Review: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'results' | 'questions'>('results');
   const [selectedQuestion, setSelectedQuestion] = useState<string>('');
   const [isLoadingResults, setIsLoadingResults] = useState<boolean>(false);
+  const [hoveredAttempt, setHoveredAttempt] = useState<string | null>(null);
 
   const assessment = id ? getAssessment(id) : null;
 
@@ -87,16 +88,20 @@ export const Review: React.FC = () => {
   }, [assessment?.results]);
   const effectiveTotalMaxMarks = totalMaxMarksRaw > 0 ? totalMaxMarksRaw : derivedTotalMaxFromFeedback;
 
-  const questionIds = React.useMemo(() => (
-    (assessment?.results?.questions || []).map(q => q.text)
-  ), [assessment?.results]);
+  const questionIds = React.useMemo(() => {
+    const ids = (assessment?.results?.questions || []).map(q => q.text);
+    console.log('Question IDs from results:', ids);
+    return ids;
+  }, [assessment?.results]);
 
   // Ensure selected question is valid after results load
   useEffect(() => {
-    if (questionIds.length && !questionIds.includes(selectedQuestion)) {
-      setSelectedQuestion(questionIds[0]);
+    console.log('Selected question effect - questionIds:', questionIds, 'selectedQuestion:', selectedQuestion);
+    if (questionIds.length > 0 && (!selectedQuestion || !questionIds.includes(selectedQuestion))) {
+      console.log('Setting selected question to:', questionIds[0]);
+      setSelectedQuestion(questionIds[0] || '');
     }
-  }, [questionIds, selectedQuestion]);
+  }, [questionIds]);
 
   if (!assessment) {
     return (
@@ -320,20 +325,62 @@ export const Review: React.FC = () => {
                         <td className="px-6 py-4 font-semibold text-slate-900">{/* empty for average */}</td>
                       </tr>
                       {/* Individual attempt rows */}
-                      {modelResult.attempts.map((attempt, attemptIndex) => (
+                      {modelResult.attempts.map((attempt, attemptIndex) => {
+                        const attemptKey = `${modelIndex}-${attemptIndex}`;
+                        return (
                         <tr 
-                          key={`${modelIndex}-${attemptIndex}`} 
-                          className={`hover:bg-slate-50/50 transition-colors ${
+                          key={attemptKey} 
+                          className={`hover:bg-slate-50/50 transition-colors relative ${
                             attemptIndex % 2 === 0 ? 'bg-white/60' : 'bg-slate-50/60'
                           }`}
+                          onMouseEnter={() => setHoveredAttempt(attemptKey)}
+                          onMouseLeave={() => setHoveredAttempt(null)}
                         >
                           <td className="px-6 py-3 text-sm text-slate-600 pl-12">
-                            <div className="flex flex-col">
-                              <span>Attempt {attempt.attemptNumber}</span>
-                              {attempt.failureReasons && attempt.failureReasons.length > 0 && (
-                                <span className="mt-1 inline-block text-xs text-red-700 bg-red-100 rounded px-2 py-0.5">
-                                  Failed: {attempt.failureReasons[0]}
-                                </span>
+                            <div className="flex items-center gap-2">
+                              <div className="flex flex-col">
+                                <span>Attempt {attempt.attemptNumber}</span>
+                                {attempt.failureReasons && attempt.failureReasons.length > 0 && (
+                                  <span className="mt-1 inline-block text-xs text-red-700 bg-red-100 rounded px-2 py-0.5">
+                                    Failed: {attempt.failureReasons[0]}
+                                  </span>
+                                )}
+                              </div>
+                              {attempt.tokenUsage && (
+                                <div className="relative inline-flex items-center">
+                                  <Info className="w-4 h-4 text-slate-400 hover:text-slate-600 cursor-help" />
+                                  {hoveredAttempt === attemptKey && (
+                                    <div className="absolute left-6 top-0 z-50 bg-slate-900 text-white p-3 rounded-lg shadow-xl min-w-[200px] text-xs">
+                                      <div className="font-semibold mb-2 border-b border-slate-700 pb-1">Token Usage</div>
+                                      <div className="space-y-1">
+                                        {attempt.tokenUsage.input_tokens && (
+                                          <div className="flex justify-between">
+                                            <span className="text-slate-300">Input:</span>
+                                            <span className="font-mono">{attempt.tokenUsage.input_tokens.toLocaleString()}</span>
+                                          </div>
+                                        )}
+                                        {attempt.tokenUsage.output_tokens && (
+                                          <div className="flex justify-between">
+                                            <span className="text-slate-300">Output:</span>
+                                            <span className="font-mono">{attempt.tokenUsage.output_tokens.toLocaleString()}</span>
+                                          </div>
+                                        )}
+                                        {attempt.tokenUsage.reasoning_tokens !== undefined && (
+                                          <div className="flex justify-between">
+                                            <span className="text-slate-300">Reasoning:</span>
+                                            <span className="font-mono">{attempt.tokenUsage.reasoning_tokens.toLocaleString()}</span>
+                                          </div>
+                                        )}
+                                        {attempt.tokenUsage.total_tokens && (
+                                          <div className="flex justify-between pt-1 border-t border-slate-700 mt-1 font-semibold">
+                                            <span>Total:</span>
+                                            <span className="font-mono">{attempt.tokenUsage.total_tokens.toLocaleString()}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </td>
@@ -377,7 +424,8 @@ export const Review: React.FC = () => {
                             )}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </React.Fragment>
                   ))}
                 </tbody>
@@ -406,8 +454,8 @@ export const Review: React.FC = () => {
                     >
                       <ArrowLeft className="w-4 h-4" />
                     </button>
-                    <div className="text-xs text-slate-600 min-w-[150px] text-center">
-                      {results.questions.find(q => q.text === selectedQuestion)?.text || `Question ${Math.max(1, questionIds.indexOf(selectedQuestion) + 1)}`} ({Math.max(1, questionIds.indexOf(selectedQuestion) + 1)} of {questionIds.length})
+                    <div className="text-sm font-medium text-slate-700 min-w-[180px] text-center bg-white/80 px-3 py-1 rounded-lg">
+                      Question {selectedQuestion} ({Math.max(1, questionIds.indexOf(selectedQuestion) + 1)} of {questionIds.length})
                     </div>
                     <button
                       type="button"
@@ -426,30 +474,68 @@ export const Review: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {questionIds.map((qid, idx) => {
+                  {results.questions.map((q, idx) => {
+                    const qid = q.text;
                     const isActive = qid === selectedQuestion;
-                    const q = results.questions.find(q => q.text === qid);
+                    // Use the actual question ID from q.text, not a fallback
+                    const displayText = q.text;
                     return (
                       <button
-                        key={qid}
+                        key={qid || `q-${idx}`}
                         type="button"
                         onClick={() => setSelectedQuestion(qid)}
-                        className={`px-3 py-2 rounded-lg border text-sm transition-all ${
+                        className={`px-4 py-2 rounded-lg border text-sm font-medium transition-all transform hover:scale-105 ${
                           isActive
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                            : 'bg-white/80 text-slate-700 border-slate-300 hover:bg-slate-50'
+                            ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-transparent shadow-lg'
+                            : 'bg-white/80 text-slate-700 border-slate-300 hover:bg-slate-50 hover:border-slate-400'
                         }`}
                         aria-current={isActive ? 'true' : undefined}
-                        aria-label={`Select question ${q?.text || qid}`}
+                        aria-label={`Select question ${displayText}`}
                       >
-                        {q?.text || `Q${idx + 1}`}
+                        {displayText}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Question Feedback */}
+              {/* Question Feedback with Human Grades */}
+              {selectedQuestion && results.humanGrades && (
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 mb-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-700 mb-1">Human Graded Mark</h3>
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl font-bold text-green-700">
+                          {results.humanGrades[selectedQuestion] !== undefined 
+                            ? results.humanGrades[selectedQuestion] 
+                            : 'N/A'}
+                        </span>
+                        {results.questions.find(q => q.text === selectedQuestion) && (
+                          <span className="text-sm text-slate-600">
+                            / {(() => {
+                              // Find max mark from first model's first attempt's feedback
+                              const firstModel = results.modelResults[0];
+                              const firstAttempt = firstModel?.attempts[0];
+                              const feedback = firstAttempt?.questionFeedback?.find(qf => qf.questionId === selectedQuestion);
+                              if (feedback?.mark) {
+                                const parts = feedback.mark.split('/');
+                                return parts[1] || '?';
+                              }
+                              return '?';
+                            })()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-sm text-slate-600">
+                      Question: {selectedQuestion}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Question Feedback from Models */}
               <div className="space-y-6">
                 {isLoadingResults && (
                   <div className="animate-pulse space-y-4">
@@ -466,9 +552,13 @@ export const Review: React.FC = () => {
                     </div>
                     <div className="grid gap-4">
                       {modelResult.attempts.map((attempt) => {
-                        const questionFeedback = attempt.questionFeedback.find(
+                        console.log('Attempt feedback for attempt', attempt.attemptNumber, ':', attempt.questionFeedback?.map(qf => qf.questionId));
+                        console.log('Looking for selectedQuestion:', selectedQuestion);
+                        const questionFeedback = attempt.questionFeedback?.find(
                           qf => qf.questionId === selectedQuestion
                         );
+                        console.log('Found feedback:', questionFeedback);
+                        
                         return questionFeedback ? (
                           <div key={attempt.attemptNumber} className="bg-gradient-to-r from-slate-50 to-blue-50/50 rounded-lg p-4 border border-slate-200/60">
                             <div className="flex justify-between items-center mb-3">
@@ -479,9 +569,17 @@ export const Review: React.FC = () => {
                                 {questionFeedback.mark}
                               </span>
                             </div>
-                            <p className="text-sm text-slate-700 leading-relaxed">
-                              {questionFeedback.feedback}
-                            </p>
+                            <div className="space-y-2">
+                              {questionFeedback.feedback ? (
+                                <p className="text-sm text-slate-700 leading-relaxed">
+                                  {questionFeedback.feedback}
+                                </p>
+                              ) : (
+                                <p className="text-sm text-slate-500 italic">
+                                  No feedback provided
+                                </p>
+                              )}
+                            </div>
                           </div>
                         ) : (
                           attempt.failureReasons && attempt.failureReasons.length > 0 ? (
@@ -497,8 +595,19 @@ export const Review: React.FC = () => {
                                 ))}
                               </ul>
                             </div>
-                          ) : null
-                        );
+                          ) : (
+                            <div key={attempt.attemptNumber} className="bg-slate-50 rounded-lg p-4 border border-slate-200/60">
+                              <div className="flex justify-between items-center mb-2">
+                                <span className="text-sm font-semibold text-slate-600 bg-white/70 px-3 py-1 rounded-full">
+                                  Attempt {attempt.attemptNumber}
+                                </span>
+                              </div>
+                              <p className="text-sm text-slate-500 italic">
+                                No answer recorded for this question
+                              </p>
+                            </div>
+                          )
+                        )
                       })}
                     </div>
                   </div>
