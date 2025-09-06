@@ -162,9 +162,54 @@ def get_stats(session_id: str) -> StatsRes:
             },
         }
 
+    # Read token usage statistics
+    token_usage_stats = {}
+    try:
+        token_res = (
+            supabase.table("token_usage")
+            .select("model_name,try_index,input_tokens,output_tokens,reasoning_tokens,total_tokens,cost_estimate")
+            .eq("session_id", session_id)
+            .execute()
+        )
+        
+        # Aggregate token usage by model
+        for row in token_res.data or []:
+            model = row.get("model_name")
+            try_index = row.get("try_index")
+            if model and try_index is not None:
+                if model not in token_usage_stats:
+                    token_usage_stats[model] = {
+                        "total_input_tokens": 0,
+                        "total_output_tokens": 0,
+                        "total_reasoning_tokens": 0,
+                        "total_tokens": 0,
+                        "total_cost": 0.0,
+                        "attempts": {}
+                    }
+                
+                # Add to totals
+                token_usage_stats[model]["total_input_tokens"] += row.get("input_tokens", 0)
+                token_usage_stats[model]["total_output_tokens"] += row.get("output_tokens", 0)
+                token_usage_stats[model]["total_reasoning_tokens"] += row.get("reasoning_tokens", 0) or 0
+                token_usage_stats[model]["total_tokens"] += row.get("total_tokens", 0)
+                token_usage_stats[model]["total_cost"] += row.get("cost_estimate", 0.0) or 0.0
+                
+                # Store per-attempt data
+                token_usage_stats[model]["attempts"][str(try_index)] = {
+                    "input_tokens": row.get("input_tokens", 0),
+                    "output_tokens": row.get("output_tokens", 0),
+                    "reasoning_tokens": row.get("reasoning_tokens"),
+                    "total_tokens": row.get("total_tokens", 0),
+                    "cost_estimate": row.get("cost_estimate")
+                }
+    except Exception:
+        # If token_usage table doesn't exist or query fails, continue without token stats
+        pass
+    
     totals = {
         "total_max_marks": totals_total_max,
         "total_marks_awarded_by_model_try": totals_by_model_try,
+        "token_usage_stats": token_usage_stats
     }
 
     # Persist the computed stats so the 'stats' table stores totals and discrepancies

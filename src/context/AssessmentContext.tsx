@@ -274,9 +274,23 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 };
               });
             
-            // Token usage would come from the backend if it tracks it
-            // For now, it's not available in the current backend implementation
-            const tokenUsage = undefined;
+            // Extract token usage from the first result item that has it for this model/try
+            const tokenUsage = (() => {
+              for (const qid of Object.keys(byQ)) {
+                const itemsForModel = (byQ[qid]?.[model] || []) as ResultItem[];
+                const item = itemsForModel.find((it: ResultItem) => it.try_index === tryIndex);
+                if (item?.token_usage) {
+                  // Map backend token_usage to frontend format
+                  return {
+                    input_tokens: item.token_usage.input_tokens,
+                    output_tokens: item.token_usage.output_tokens,
+                    reasoning_tokens: item.token_usage.reasoning_tokens,
+                    total_tokens: item.token_usage.total_tokens,
+                  };
+                }
+              }
+              return undefined;
+            })();
           // Attach failure reasons from errors endpoint
           const errs = (errorsByModelTry[model] && errorsByModelTry[model][String(tryIndex)]) || [];
           const failureReasons = errs
@@ -298,7 +312,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               zpfQuestions,
               rangeQuestions,
               failureReasons,
-              tokenUsage: undefined, // Token usage not available for new assessments yet
+              tokenUsage
             };
         });
 
@@ -523,13 +537,19 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 || JSON.stringify(e))
               .filter((s: string) => !!s);
             
-            // Extract token usage from the first available result item for this model/try
+            // Extract token usage from the first result item that has it for this model/try
             const tokenUsage = (() => {
               for (const qid of Object.keys(byQ)) {
                 const itemsForModel = (byQ[qid]?.[model] || []) as ResultItem[];
                 const item = itemsForModel.find((it: ResultItem) => it.try_index === tryIndex);
                 if (item?.token_usage) {
-                  return item.token_usage;
+                  // Map backend token_usage to frontend format
+                  return {
+                    input_tokens: item.token_usage.input_tokens,
+                    output_tokens: item.token_usage.output_tokens,
+                    reasoning_tokens: item.token_usage.reasoning_tokens,
+                    total_tokens: item.token_usage.total_tokens,
+                  };
                 }
               }
               return undefined;

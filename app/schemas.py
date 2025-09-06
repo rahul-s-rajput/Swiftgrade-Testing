@@ -104,10 +104,19 @@ class SessionConfigReq(BaseModel):
 
 # --- Story 23: Results API ---
 
+class TokenUsageItem(BaseModel):
+    input_tokens: int = 0
+    output_tokens: int = 0
+    reasoning_tokens: Optional[int] = None
+    total_tokens: int = 0
+    cost_estimate: Optional[float] = None
+
+
 class ResultItem(BaseModel):
     try_index: int
     marks_awarded: Optional[float] = None
     rubric_notes: Optional[str] = None
+    token_usage: Optional[TokenUsageItem] = None
 
 
 class ResultsRes(BaseModel):

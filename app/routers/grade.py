@@ -543,6 +543,45 @@ def _build_messages(student_urls: List[str], key_urls: List[str], questions: Lis
     ]
 
 
+def _extract_token_usage(raw: Dict[str, Any]) -> Dict[str, Any] | None:
+    """Extract token usage information from OpenRouter API response."""
+    try:
+        usage = raw.get("usage", {})
+        if not usage:
+            return None
+        
+        token_data = {
+            "input_tokens": usage.get("prompt_tokens", 0),
+            "output_tokens": usage.get("completion_tokens", 0),
+            "reasoning_tokens": usage.get("reasoning_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+            "cache_creation_input_tokens": usage.get("cache_creation_input_tokens", 0),
+            "cache_read_input_tokens": usage.get("cache_read_input_tokens", 0),
+        }
+        
+        # Add model info if available
+        if raw.get("model"):
+            token_data["model_id"] = raw.get("model")
+        
+        # Add finish reason if available
+        choices = raw.get("choices", [])
+        if choices and len(choices) > 0:
+            finish_reason = choices[0].get("finish_reason")
+            if finish_reason:
+                token_data["finish_reason"] = finish_reason
+        
+        # Calculate cost estimate (adjust rates based on actual model pricing)
+        input_cost = token_data["input_tokens"] * 0.003 / 1000  # $3 per 1M tokens
+        output_cost = token_data["output_tokens"] * 0.015 / 1000  # $15 per 1M tokens
+        reasoning_cost = token_data["reasoning_tokens"] * 0.001 / 1000  # $1 per 1M tokens
+        token_data["cost_estimate"] = round(input_cost + output_cost + reasoning_cost, 6)
+        
+        return token_data
+    except Exception as e:
+        logging.warning(f"Failed to extract token usage: {e}")
+        return None
+
+
 def _parse_model_output(raw: Dict[str, Any]) -> Tuple[List[Dict[str, Any]] | None, Dict[str, Any] | None]:
     """Attempt to parse the first choice content as JSON with expected schema.
     Returns (answers, validation_errors)."""
@@ -939,13 +978,46 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
             # Fallback to 500 with first error message
             raise HTTPException(status_code=500, detail=f"grading failed: {errors[0] if errors else 'unknown error'}")
 
-    # Persist results per question
+    # Persist results per question and token usage
     any_valid_answers: bool = False
     upserts: List[Dict[str, Any]] = []
+    token_usage_records: List[Dict[str, Any]] = []
+    
     for model, try_index, raw, instance_id in results:
         # Use instance_id if available, otherwise use model name
         # This allows differentiating same model with different reasoning
         model_identifier = instance_id if instance_id else model
+        
+        # Extract token usage from the raw response
+        token_usage = _extract_token_usage(raw)
+        if token_usage:
+            # Use instance_id if available, otherwise use model name
+            model_identifier = instance_id if instance_id else model
+            
+            token_usage_record = {
+                "session_id": payload.session_id,
+                "model_name": model_identifier,
+                "try_index": try_index,
+                "input_tokens": token_usage.get("input_tokens", 0),
+                "output_tokens": token_usage.get("output_tokens", 0),
+                "reasoning_tokens": token_usage.get("reasoning_tokens", 0),
+                "cache_creation_input_tokens": token_usage.get("cache_creation_input_tokens", 0),
+                "cache_read_input_tokens": token_usage.get("cache_read_input_tokens", 0),
+                "model_id": token_usage.get("model_id"),
+                "finish_reason": token_usage.get("finish_reason"),
+                "cost_estimate": token_usage.get("cost_estimate"),
+                "metadata": {"raw_usage": raw.get("usage", {})},
+            }
+            token_usage_records.append(token_usage_record)
+            
+            if OPENROUTER_DEBUG:
+                logging.info("📊 Token usage for %s (try %s): input=%s, output=%s, reasoning=%s, total=%s, cost=$%.4f",
+                           model_identifier, try_index,
+                           token_usage.get("input_tokens", 0),
+                           token_usage.get("output_tokens", 0),
+                           token_usage.get("reasoning_tokens", 0),
+                           token_usage.get("total_tokens", 0),
+                           token_usage.get("cost_estimate", 0))
         
         answers, verr = _parse_model_output(raw)
         if answers:
@@ -1018,6 +1090,59 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
             # Do not fail the entire request; mark session failed
             supabase.table("session").update({"status": "failed"}).eq("id", payload.session_id).execute()
             raise HTTPException(status_code=500, detail=f"failed to persist results: {e}")
+    
+    # Persist token usage data
+    if token_usage_records:
+        try:
+            # Create the token_usage table if it doesn't exist (for development)
+            # In production, this should be done via proper migrations
+            try:
+                supabase.rpc("exec_sql", {
+                    "query": """
+                    CREATE TABLE IF NOT EXISTS token_usage (
+                        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+                        session_id UUID NOT NULL,
+                        model_name TEXT NOT NULL,
+                        try_index INTEGER NOT NULL,
+                        input_tokens INTEGER DEFAULT 0,
+                        output_tokens INTEGER DEFAULT 0,
+                        reasoning_tokens INTEGER DEFAULT 0,
+                        total_tokens INTEGER GENERATED ALWAYS AS (input_tokens + output_tokens + COALESCE(reasoning_tokens, 0)) STORED,
+                        cache_creation_input_tokens INTEGER DEFAULT 0,
+                        cache_read_input_tokens INTEGER DEFAULT 0,
+                        model_id TEXT,
+                        finish_reason TEXT,
+                        cost_estimate DECIMAL(10, 6),
+                        metadata JSONB,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT unique_token_usage_per_attempt UNIQUE (session_id, model_name, try_index)
+                    )
+                    """
+                }).execute()
+            except Exception:
+                # Table might already exist, continue
+                pass
+            
+            # Insert token usage records
+            supabase.table("token_usage").upsert(
+                token_usage_records,
+                on_conflict="session_id,model_name,try_index"
+            ).execute()
+            
+            if OPENROUTER_DEBUG:
+                logging.info("✅ Saved token usage for %s records", len(token_usage_records))
+        except Exception as e:
+            # Log error but don't fail the request
+            logging.error("Failed to persist token usage: %s", e)
+            # Optionally append to session log
+            try:
+                _append_session_log(
+                    payload.session_id,
+                    f"TOKEN_USAGE_ERROR: {e}\n" + _json_pp(token_usage_records)
+                )
+            except Exception:
+                pass
 
     # Mark session status based on whether any valid answers were parsed
     try:

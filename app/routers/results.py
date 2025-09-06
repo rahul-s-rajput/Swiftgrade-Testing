@@ -2,7 +2,7 @@ from typing import Dict, List, Any
 
 from fastapi import APIRouter, HTTPException, status
 
-from ..schemas import ResultsRes, ResultItem, ResultsErrorsRes
+from ..schemas import ResultsRes, ResultItem, ResultsErrorsRes, TokenUsageItem
 from ..supabase_client import supabase
 
 
@@ -27,6 +27,33 @@ def get_results(session_id: str) -> ResultsRes:
         .order("try_index")
         .execute()
     )
+    
+    # Read token usage for this session
+    token_usage_data = {}
+    try:
+        token_res = (
+            supabase.table("token_usage")
+            .select("model_name,try_index,input_tokens,output_tokens,reasoning_tokens,total_tokens,cost_estimate")
+            .eq("session_id", session_id)
+            .execute()
+        )
+        
+        # Index token usage by model_name and try_index for quick lookup
+        for row in token_res.data or []:
+            model = row.get("model_name")
+            try_index = row.get("try_index")
+            if model and try_index is not None:
+                key = f"{model}_{try_index}"
+                token_usage_data[key] = TokenUsageItem(
+                    input_tokens=row.get("input_tokens", 0),
+                    output_tokens=row.get("output_tokens", 0),
+                    reasoning_tokens=row.get("reasoning_tokens"),
+                    total_tokens=row.get("total_tokens", 0),
+                    cost_estimate=row.get("cost_estimate")
+                )
+    except Exception:
+        # If token_usage table doesn't exist or query fails, continue without token data
+        pass
 
     results_by_question: Dict[str, Dict[str, List[ResultItem]]] = {}
 
@@ -37,10 +64,15 @@ def get_results(session_id: str) -> ResultsRes:
             continue
         model = row.get("model_name")
         try_index = int(row.get("try_index")) if row.get("try_index") is not None else None
+        # Look up token usage for this model and try_index
+        token_usage_key = f"{model}_{try_index or 1}"
+        token_usage = token_usage_data.get(token_usage_key)
+        
         item = ResultItem(
             try_index=try_index or 1,
             marks_awarded=(row.get("marks_awarded") if row.get("marks_awarded") is not None else None),
             rubric_notes=row.get("rubric_notes"),
+            token_usage=token_usage
         )
         if qid not in results_by_question:
             results_by_question[qid] = {}

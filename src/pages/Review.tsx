@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, BarChart3, MessageCircle, Trophy, Target, Brain, Info } from 'lucide-react';
 import { useAssessments } from '../context/AssessmentContext';
@@ -11,6 +11,9 @@ export const Review: React.FC = () => {
   const [selectedQuestion, setSelectedQuestion] = useState<string>('');
   const [isLoadingResults, setIsLoadingResults] = useState<boolean>(false);
   const [hoveredAttempt, setHoveredAttempt] = useState<string | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<'above' | 'below'>('below');
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const iconRef = useRef<HTMLDivElement>(null);
 
   const assessment = id ? getAssessment(id) : null;
 
@@ -333,8 +336,6 @@ export const Review: React.FC = () => {
                           className={`hover:bg-slate-50/50 transition-colors relative ${
                             attemptIndex % 2 === 0 ? 'bg-white/60' : 'bg-slate-50/60'
                           }`}
-                          onMouseEnter={() => setHoveredAttempt(attemptKey)}
-                          onMouseLeave={() => setHoveredAttempt(null)}
                         >
                           <td className="px-6 py-3 text-sm text-slate-600 pl-12">
                             <div className="flex items-center gap-2">
@@ -347,10 +348,41 @@ export const Review: React.FC = () => {
                                 )}
                               </div>
                               {attempt.tokenUsage && (
-                                <div className="relative inline-flex items-center">
+                                <div 
+                                  ref={iconRef}
+                                  className="relative inline-flex items-center"
+                                  onMouseEnter={(e) => {
+                                    setHoveredAttempt(attemptKey);
+                                    // Check if tooltip would go off-screen
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const spaceBelow = window.innerHeight - rect.bottom;
+                                    const tooltipHeight = 250; // Approximate height of tooltip
+                                    
+                                    if (spaceBelow < tooltipHeight) {
+                                      setTooltipPosition('above');
+                                    } else {
+                                      setTooltipPosition('below');
+                                    }
+                                  }}
+                                  onMouseLeave={() => {
+                                    setHoveredAttempt(null);
+                                    setTooltipPosition('below');
+                                  }}
+                                >
                                   <Info className="w-4 h-4 text-slate-400 hover:text-slate-600 cursor-help" />
                                   {hoveredAttempt === attemptKey && (
-                                    <div className="absolute left-6 top-0 z-50 bg-slate-900 text-white p-3 rounded-lg shadow-xl min-w-[200px] text-xs">
+                                    <div 
+                                      ref={tooltipRef}
+                                      className={`absolute left-6 z-50 bg-slate-900 text-white p-3 rounded-lg shadow-xl min-w-[200px] text-xs ${
+                                        tooltipPosition === 'above' 
+                                          ? 'bottom-6' 
+                                          : 'top-0'
+                                      }`}
+                                      style={{
+                                        maxHeight: '80vh',
+                                        overflowY: 'auto'
+                                      }}
+                                    >
                                       <div className="font-semibold mb-2 border-b border-slate-700 pb-1">Token Usage</div>
                                       <div className="space-y-1">
                                         {attempt.tokenUsage.input_tokens && (
@@ -378,6 +410,14 @@ export const Review: React.FC = () => {
                                           </div>
                                         )}
                                       </div>
+                                      {/* Arrow pointer - adjusts based on position */}
+                                      <div 
+                                        className={`absolute w-0 h-0 border-solid ${
+                                          tooltipPosition === 'above'
+                                            ? 'top-full left-2 border-t-[6px] border-t-slate-900 border-x-[6px] border-x-transparent'
+                                            : 'bottom-full left-2 border-b-[6px] border-b-slate-900 border-x-[6px] border-x-transparent'
+                                        }`}
+                                      />
                                     </div>
                                   )}
                                 </div>
