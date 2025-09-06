@@ -144,7 +144,7 @@ async fn start_backend(
                 }
                 CommandEvent::Stderr(line) => {
                     let line_str = String::from_utf8_lossy(&line);
-                    eprintln!("Backend error: {}", line_str);
+                    eprintln!("{}", line_str);
                     let _ = window.emit("backend-error", line_str.to_string());
                 }
                 CommandEvent::Terminated(payload) => {
