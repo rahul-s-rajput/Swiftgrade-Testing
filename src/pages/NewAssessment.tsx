@@ -101,9 +101,7 @@ export const NewAssessment: React.FC = () => {
       newErrors.studentImages = 'Please upload at least one student test image';
     }
 
-    if (formData.answerKeyImages.length === 0) {
-      newErrors.answerKeyImages = 'Please upload at least one answer key image';
-    }
+    // Answer key images are optional - system supports grading without answer keys
 
     if (!formData.questions.trim()) {
       newErrors.questions = 'Question list is required';
@@ -451,7 +449,7 @@ export const NewAssessment: React.FC = () => {
               {/* Answer Key Images */}
               <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-6">
                 <FileUpload
-                  label="Upload Answer Key Images"
+                  label="Upload Answer Key Images (Optional)"
                   files={formData.answerKeyImages}
                   onChange={(files) => setFormData({ ...formData, answerKeyImages: files })}
                 />
