@@ -5,6 +5,16 @@ export interface ReasoningConfig {
   tokens?: number;
 }
 
+// --- Grading Rubric Types ---
+
+export interface ModelPair {
+  rubricModel: string;              // Model ID for rubric analysis
+  assessmentModel: string;          // Model ID for assessment grading
+  rubricReasoning?: ReasoningConfig;   // Reasoning config for rubric model
+  assessmentReasoning?: ReasoningConfig; // Reasoning config for assessment model
+  instanceId?: string;              // Unique pair identifier
+}
+
 export interface Assessment {
   id: string;
   name: string;
@@ -12,8 +22,14 @@ export interface Assessment {
   status: 'running' | 'complete' | 'failed';
   studentImages: File[];
   answerKeyImages: File[];
+  rubricImages: File[];  // NEW: Grading rubric images
   questions: string;
   humanGrades: string;
+  
+  // NEW: Model pairs for rubric-based grading
+  modelPairs?: ModelPair[];
+  
+  // LEGACY: Single models (kept for backward compatibility)
   selectedModels: string[];
   iterations: number;
   reasoningBySelection?: ReasoningConfig[];
@@ -28,6 +44,11 @@ export interface AssessmentResults {
 }
 
 export interface ModelResult {
+  // NEW: Model pair identifiers (for rubric-based grading)
+  rubricModel?: string;      // Rubric model ID
+  assessmentModel?: string;  // Assessment model ID
+  
+  // LEGACY: Combined model identifier (kept for backward compatibility)
   model: string;
   averages: {
     discrepancies100: number;
@@ -43,6 +64,11 @@ export interface ModelResult {
 
 export interface Attempt {
   attemptNumber: number;
+  
+  // NEW: Rubric analysis output
+  rubricResponse?: string;
+  
+  // Existing discrepancy metrics
   discrepancies100: number;
   questionDiscrepancies100: number;
   zpfDiscrepancies: number;

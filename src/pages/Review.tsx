@@ -2,14 +2,17 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, BarChart3, MessageCircle, Trophy, Target, Brain, Info } from 'lucide-react';
 import { useAssessments } from '../context/AssessmentContext';
+import { getRubricResults } from '../utils/api';  // NEW: Import rubric results API
 
 export const Review: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { getAssessment, loadAssessmentResults } = useAssessments();
   const [activeTab, setActiveTab] = useState<'results' | 'questions'>('results');
+  const [questionTab, setQuestionTab] = useState<'both' | 'rubric' | 'feedback'>('both');  // NEW: Sub-tabs for questions
   const [selectedQuestion, setSelectedQuestion] = useState<string>('');
   const [isLoadingResults, setIsLoadingResults] = useState<boolean>(false);
+  const [rubricResults, setRubricResults] = useState<any>(null);  // NEW: Store rubric results
   const [hoveredAttempt, setHoveredAttempt] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<'above' | 'below'>('below');
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -106,6 +109,26 @@ export const Review: React.FC = () => {
     }
   }, [questionIds]);
 
+  // NEW: Fetch rubric results when assessment is complete and has results
+  useEffect(() => {
+    if (assessment && assessment.status === 'complete' && assessment.results && id) {
+      // Only fetch if we haven't already or if assessment uses model pairs
+      const hasModelPairs = assessment.results.modelResults.some(mr => mr.rubricModel || mr.assessmentModel);
+      if (hasModelPairs && !rubricResults) {
+        console.log('[Review] Fetching rubric results for session:', id);
+        getRubricResults(id)
+          .then(data => {
+            console.log('[Review] Rubric results loaded:', data);
+            setRubricResults(data);
+          })
+          .catch(err => {
+            console.error('[Review] Failed to load rubric results:', err);
+            // Non-fatal error, continue without rubric data
+          });
+      }
+    }
+  }, [assessment?.status, assessment?.results, id]);
+
   if (!assessment) {
     return (
       <div className="text-center py-20">
@@ -180,6 +203,70 @@ export const Review: React.FC = () => {
     return `${num}/${den} (${pct.toFixed(2)}%)`;
   };
 
+  // Helper: Extract grading criteria for a specific question from full rubric response
+  const extractQuestionCriteria = (rubricResponse: string, questionId: string): any | null => {
+    try {
+      // Try to parse as JSON
+      const parsed = JSON.parse(rubricResponse);
+      
+      // Look for grading_criteria array
+      if (parsed.grading_criteria && Array.isArray(parsed.grading_criteria)) {
+        // Find the question by question_number or question_id
+        const questionCriteria = parsed.grading_criteria.find(
+          (q: any) => q.question_number === questionId || q.question_id === questionId
+        );
+        
+        return questionCriteria || null;
+      }
+      
+      // If not found or not in expected format, return null
+      return null;
+    } catch (e) {
+      // If parsing fails, return null
+      return null;
+    }
+  };
+
+  // Component to render question criteria nicely
+  const QuestionCriteriaDisplay: React.FC<{ criteria: any }> = ({ criteria }) => {
+    if (!criteria) return null;
+    
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-purple-300">
+          <span className="font-bold text-purple-900">
+            Question {criteria.question_number || criteria.question_id}
+          </span>
+          <span className="text-sm font-semibold text-purple-700 bg-purple-100 px-2 py-1 rounded">
+            Max: {criteria.max_mark} marks
+          </span>
+        </div>
+        
+        {criteria.components && Array.isArray(criteria.components) && (
+          <div className="space-y-3">
+            {criteria.components.map((component: any, idx: number) => (
+              <div key={idx} className="bg-white/50 rounded-lg p-3 border border-purple-200">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-semibold text-slate-800">
+                    {component.header || `Component ${idx + 1}`}
+                  </span>
+                  {component.marks !== null && component.marks !== undefined && (
+                    <span className="text-xs font-medium text-purple-700 bg-purple-50 px-2 py-1 rounded">
+                      {component.marks} marks
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-slate-700 leading-relaxed">
+                  {component.criteria || 'No criteria specified'}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -205,8 +292,14 @@ export const Review: React.FC = () => {
           </div>
           <div className="flex items-center space-x-4 text-sm">
             <div className="bg-white/80 backdrop-blur-sm px-4 py-2 rounded-lg shadow-md">
-              <span className="text-slate-600">Models:</span>
-              <span className="font-semibold text-slate-900 ml-1">{assessment.selectedModels.length}</span>
+              <span className="text-slate-600">
+                {assessment.modelPairs && assessment.modelPairs.length > 0 ? 'Model Pairs:' : 'Models:'}
+              </span>
+              <span className="font-semibold text-slate-900 ml-1">
+                {assessment.modelPairs && assessment.modelPairs.length > 0 
+                  ? assessment.modelPairs.length 
+                  : assessment.selectedModels.length}
+              </span>
             </div>
             <div className="bg-white/80 backdrop-blur-sm px-4 py-2 rounded-lg shadow-md">
               <span className="text-slate-600">Iterations:</span>
@@ -301,7 +394,9 @@ export const Review: React.FC = () => {
                         <td className="px-6 py-4 font-bold text-slate-900">
                           <div className="flex items-center">
                             <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full mr-3"></div>
-                            {formatModelLabel(modelResult.model)} (Average)
+                            {modelResult.rubricModel && modelResult.assessmentModel
+                              ? `${formatModelLabel(modelResult.rubricModel)} → ${formatModelLabel(modelResult.assessmentModel)}`
+                              : formatModelLabel(modelResult.model)} (Average)
                           </div>
                         </td>
                         <td className="px-6 py-4 font-semibold text-slate-900">
@@ -475,6 +570,42 @@ export const Review: React.FC = () => {
 
           {activeTab === 'questions' && (
             <div className="space-y-6">
+              {/* NEW: Sub-tab Navigation */}
+              <div className="border-b border-slate-200">
+                <nav className="flex space-x-8">
+                  <button
+                    onClick={() => setQuestionTab('both')}
+                    className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                      questionTab === 'both'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Both (Rubric + Feedback)
+                  </button>
+                  <button
+                    onClick={() => setQuestionTab('rubric')}
+                    className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                      questionTab === 'rubric'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Grading Rubric Only
+                  </button>
+                  <button
+                    onClick={() => setQuestionTab('feedback')}
+                    className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                      questionTab === 'feedback'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Feedback Only
+                  </button>
+                </nav>
+              </div>
+
               {/* Question Navigator */}
               <div className="bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -584,11 +715,174 @@ export const Review: React.FC = () => {
                     <div className="h-20 bg-slate-200 rounded"></div>
                   </div>
                 )}
-                {results.modelResults.map((modelResult) => (
+                
+                {/* NEW: Conditional rendering based on sub-tab */}
+                {questionTab === 'both' && (
+                  // BOTH: Show rubric + feedback
+                  results.modelResults.map((modelResult) => {
+                    // Get rubric data for this model
+                    const modelRubricData = rubricResults?.rubric_results?.[modelResult.model];
+                    
+                    return (
+                      <div key={modelResult.model} className="bg-white/80 backdrop-blur-sm border border-white/60 rounded-xl p-6 shadow-lg">
+                        <div className="flex items-center mb-4">
+                          <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full mr-3"></div>
+                          <h4 className="text-lg font-bold text-slate-900">
+                            {modelResult.rubricModel && modelResult.assessmentModel
+                              ? `${formatModelLabel(modelResult.rubricModel)} → ${formatModelLabel(modelResult.assessmentModel)}`
+                              : formatModelLabel(modelResult.model)}
+                          </h4>
+                        </div>
+                        <div className="grid gap-4">
+                          {modelResult.attempts.map((attempt) => {
+                            const questionFeedback = attempt.questionFeedback?.find(
+                              qf => qf.questionId === selectedQuestion
+                            );
+                            
+                            // Get rubric response for this attempt
+                            const rubricResponse = modelRubricData?.[attempt.attemptNumber.toString()]?.rubric_response;
+                            
+                            const filteredCriteria = rubricResponse ? extractQuestionCriteria(rubricResponse, selectedQuestion) : null;
+                            
+                            return (
+                              <div key={attempt.attemptNumber} className="space-y-3">
+                                {/* Rubric Section */}
+                                {filteredCriteria && (
+                                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-4 border border-purple-200">
+                                    <div className="flex justify-between items-center mb-3">
+                                      <span className="text-xs font-semibold text-purple-800 uppercase tracking-wide">
+                                        Grading Criteria (Attempt {attempt.attemptNumber})
+                                      </span>
+                                    </div>
+                                    <QuestionCriteriaDisplay criteria={filteredCriteria} />
+                                  </div>
+                                )}
+                                
+                                {/* Feedback Section */}
+                                {questionFeedback ? (
+                                  <div className="bg-gradient-to-r from-slate-50 to-blue-50/50 rounded-lg p-4 border border-slate-200/60">
+                                    <div className="flex justify-between items-center mb-3">
+                                      <span className="text-sm font-semibold text-slate-700 bg-white/70 px-3 py-1 rounded-full">
+                                        Assessment Feedback (Attempt {attempt.attemptNumber})
+                                      </span>
+                                      <span className="text-sm font-bold text-blue-700 bg-blue-100 px-3 py-1 rounded-full">
+                                        {questionFeedback.mark}
+                                      </span>
+                                    </div>
+                                    <div className="space-y-2">
+                                      {questionFeedback.feedback ? (
+                                        <p className="text-sm text-slate-700 leading-relaxed">
+                                          {questionFeedback.feedback}
+                                        </p>
+                                      ) : (
+                                        <p className="text-sm text-slate-500 italic">
+                                          No feedback provided
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  attempt.failureReasons && attempt.failureReasons.length > 0 ? (
+                                    <div className="bg-red-50 rounded-lg p-4 border border-red-200/70">
+                                      <div className="flex justify-between items-center mb-2">
+                                        <span className="text-sm font-semibold text-red-800 bg-white/70 px-3 py-1 rounded-full">
+                                          Attempt {attempt.attemptNumber} failed
+                                        </span>
+                                      </div>
+                                      <ul className="list-disc pl-5 text-sm text-red-800 space-y-1">
+                                        {attempt.failureReasons.slice(0, 3).map((r, idx) => (
+                                          <li key={idx}>{r}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  ) : (
+                                    <div className="bg-slate-50 rounded-lg p-4 border border-slate-200/60">
+                                      <div className="flex justify-between items-center mb-2">
+                                        <span className="text-sm font-semibold text-slate-600 bg-white/70 px-3 py-1 rounded-full">
+                                          Attempt {attempt.attemptNumber}
+                                        </span>
+                                      </div>
+                                      <p className="text-sm text-slate-500 italic">
+                                        No answer recorded for this question
+                                      </p>
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                
+                {questionTab === 'rubric' && (
+                  // RUBRIC ONLY: Show only rubric responses
+                  results.modelResults.map((modelResult) => {
+                    const modelRubricData = rubricResults?.rubric_results?.[modelResult.model];
+                    
+                    if (!modelRubricData) {
+                      return (
+                        <div key={modelResult.model} className="bg-white/80 backdrop-blur-sm border border-white/60 rounded-xl p-6 shadow-lg">
+                          <div className="flex items-center mb-4">
+                            <div className="w-4 h-4 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mr-3"></div>
+                            <h4 className="text-lg font-bold text-slate-900">
+                              {modelResult.rubricModel || formatModelLabel(modelResult.model)}
+                            </h4>
+                          </div>
+                          <p className="text-sm text-slate-500 italic">No rubric analysis available for this model</p>
+                        </div>
+                      );
+                    }
+                    
+                    return (
+                      <div key={modelResult.model} className="bg-white/80 backdrop-blur-sm border border-white/60 rounded-xl p-6 shadow-lg">
+                        <div className="flex items-center mb-4">
+                          <div className="w-4 h-4 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mr-3"></div>
+                          <h4 className="text-lg font-bold text-slate-900">
+                            {modelResult.rubricModel || formatModelLabel(modelResult.model)}
+                          </h4>
+                        </div>
+                        <div className="grid gap-4">
+                          {Object.entries(modelRubricData).map(([tryIndex, rubricData]) => {
+                            const rubricResponse = (rubricData as any).rubric_response;
+                            const filteredCriteria = rubricResponse ? extractQuestionCriteria(rubricResponse, selectedQuestion) : null;
+                            
+                            return (
+                              <div key={tryIndex} className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-4 border border-purple-200">
+                                <div className="flex justify-between items-center mb-3">
+                                  <span className="text-sm font-semibold text-purple-800 bg-white/70 px-3 py-1 rounded-full">
+                                    Grading Criteria (Attempt {tryIndex})
+                                  </span>
+                                </div>
+                                {filteredCriteria ? (
+                                  <QuestionCriteriaDisplay criteria={filteredCriteria} />
+                                ) : (
+                                  <p className="text-sm text-slate-500 italic">
+                                    No grading criteria available for this question
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                
+                {questionTab === 'feedback' && (
+                  // FEEDBACK ONLY: Show only assessment feedback
+                  results.modelResults.map((modelResult) => (
                   <div key={modelResult.model} className="bg-white/80 backdrop-blur-sm border border-white/60 rounded-xl p-6 shadow-lg">
                     <div className="flex items-center mb-4">
                       <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full mr-3"></div>
-                      <h4 className="text-lg font-bold text-slate-900">{formatModelLabel(modelResult.model)}</h4>
+                      <h4 className="text-lg font-bold text-slate-900">
+                        {modelResult.rubricModel && modelResult.assessmentModel
+                          ? `${formatModelLabel(modelResult.rubricModel)} → ${formatModelLabel(modelResult.assessmentModel)}`
+                          : formatModelLabel(modelResult.model)}
+                      </h4>
                     </div>
                     <div className="grid gap-4">
                       {modelResult.attempts.map((attempt) => {
@@ -651,7 +945,7 @@ export const Review: React.FC = () => {
                       })}
                     </div>
                   </div>
-                ))}
+                )))}
               </div>
             </div>
           )}

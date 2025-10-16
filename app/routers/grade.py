@@ -54,6 +54,13 @@ def _bad_request(message: str, code: str = "VALIDATION_ERROR", details: dict | N
 
 def _get_api_key() -> str:
     key = os.getenv("OPENROUTER_API_KEY")
+    logging.info(f"🔑 OPENROUTER_API_KEY loaded: {'Yes' if key else 'No'}")
+    if key:
+        logging.info(f"🔑 Key length: {len(key)}, starts with: {key[:15]}...")
+    else:
+        logging.error("❌ OPENROUTER_API_KEY is not set in environment!")
+        logging.error(f"Current working directory: {os.getcwd()}")
+        logging.error(f"Checked env var OPENROUTER_API_KEY: {os.environ.get('OPENROUTER_API_KEY', 'NOT FOUND')}")
     if not key:
         raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured")
     return key
@@ -276,7 +283,263 @@ def _encode_url(u: str) -> str:
         return u
 
 
-def _build_messages(student_urls: List[str], key_urls: List[str], questions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _build_rubric_messages(rubric_urls: List[str], questions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Build OpenRouter chat messages for rubric analysis using DB-configured templates.
+
+    Placeholders supported:
+    - In system template: [Grading rubric images], [Question list]
+    - In user template: Same placeholders supported
+    """
+
+    # Normalize URLs
+    rub_urls = [
+        _encode_url(u) for u in (rubric_urls or []) if isinstance(u, str) and u
+    ]
+
+    # Try to load rubric templates from Supabase
+    sys_template: str | None = None
+    user_template: str | None = None
+    try:
+        if OPENROUTER_DEBUG:
+            logging.info("\n" + "-"*60)
+            logging.info("🔍 Fetching rubric prompt settings from database...")
+            logging.info("-"*60)
+        
+        res = supabase.table("app_settings").select("value").eq("key", "rubric_prompt_settings").limit(1).execute()
+        rows = res.data or []
+        
+        if rows and len(rows) > 0:
+            row = rows[0]
+            value = row.get("value")
+            
+            # Handle different formats
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except json.JSONDecodeError:
+                    value = {}
+            elif value is None:
+                value = {}
+            elif not isinstance(value, dict):
+                value = {}
+            
+            # Extract templates
+            sys_template = value.get("system_template") if isinstance(value, dict) else None
+            user_template = value.get("user_template") if isinstance(value, dict) else None
+            
+            # Convert and validate
+            if sys_template is not None:
+                sys_template = str(sys_template).strip() if sys_template else None
+                if not sys_template:
+                    sys_template = None
+            
+            if user_template is not None:
+                user_template = str(user_template).strip() if user_template else None
+                if not user_template:
+                    user_template = None
+            
+            if OPENROUTER_DEBUG:
+                logging.info("📄 Extracted rubric templates:")
+                logging.info("  - System: %s chars", len(sys_template) if sys_template else 0)
+                logging.info("  - User: %s chars", len(user_template) if user_template else 0)
+    except Exception as e:
+        if OPENROUTER_DEBUG:
+            logging.error("❌ Failed to load rubric settings: %s", str(e))
+        sys_template = None
+        user_template = None
+
+    if sys_template and user_template:
+        # Use custom templates
+        questions_list = json.dumps({
+            "question_list": [
+                {
+                    "question_number": q['question_number'],
+                    "max_mark": q['max_mark']
+                }
+                for q in questions
+            ]
+        }, indent=2)
+        
+        # Build system message (plain text)
+        sys_text = sys_template
+        if "[Question list]" in sys_text:
+            sys_text = sys_text.replace("[Question list]", questions_list)
+        
+        # Build user message content array
+        user_content: List[Dict[str, Any]] = []
+        
+        # Define placeholders for rubric messages
+        placeholders = {
+            "[Grading rubric images]": ("images", rub_urls),
+            "[Question list]": ("text", questions_list)
+        }
+        
+        # Process user template
+        remaining_template = user_template
+        placeholder_positions = []
+        for placeholder, (content_type, content) in placeholders.items():
+            index = remaining_template.find(placeholder)
+            if index != -1:
+                placeholder_positions.append((index, placeholder, content_type, content))
+        
+        placeholder_positions.sort(key=lambda x: x[0])
+        
+        if placeholder_positions:
+            current_pos = 0
+            for index, placeholder, content_type, content in placeholder_positions:
+                # Add text before placeholder
+                if index > current_pos:
+                    text_before = remaining_template[current_pos:index]
+                    if text_before.strip():
+                        user_content.append({"type": "text", "text": text_before})
+                
+                # Add placeholder content
+                if content:
+                    if content_type == "images" and content:
+                        for url in content:
+                            user_content.append({"type": "image_url", "image_url": {"url": url, "detail": "high"}})
+                    elif content_type == "text" and content:
+                        user_content.append({"type": "text", "text": content})
+                
+                current_pos = index + len(placeholder)
+            
+            # Add remaining text
+            if current_pos < len(remaining_template):
+                text_after = remaining_template[current_pos:]
+                if text_after.strip():
+                    user_content.append({"type": "text", "text": text_after})
+        else:
+            user_content.append({"type": "text", "text": user_template})
+        
+        return [
+            {"role": "system", "content": sys_text},
+            {"role": "user", "content": user_content},
+        ]
+    else:
+        # Default fallback
+        sys_text = (
+            "You are a grading rubric analyzer. Analyze the rubric images and extract grading criteria.\n"
+            "Return the criteria as clear text organized by question."
+        )
+        user_content: List[Dict[str, Any]] = [
+            {"type": "text", "text": "Analyze these grading rubric images:"},
+        ]
+        for u in rub_urls:
+            user_content.append({"type": "image_url", "image_url": {"url": u, "detail": "high"}})
+        
+        questions_json = json.dumps({
+            "question_list": [
+                {"question_number": q['question_number'], "max_mark": q['max_mark']}
+                for q in questions
+            ]
+        }, indent=2)
+        user_content.append({"type": "text", "text": "Questions: " + questions_json})
+        
+        return [
+            {"role": "system", "content": sys_text},
+            {"role": "user", "content": user_content},
+        ]
+
+
+async def _call_rubric_llm(
+    client: httpx.AsyncClient,
+    model: str,
+    rubric_urls: List[str],
+    questions: List[Dict[str, Any]],
+    reasoning: Dict[str, Any] | None,
+    session_id: str,
+    try_index: int,
+    instance_id: str | None = None
+) -> str:
+    """Call rubric analysis LLM and return extracted rubric text.
+    
+    Stores the full response in rubric_result table.
+    Returns the extracted rubric text for use in assessment.
+    """
+    messages = _build_rubric_messages(rubric_urls, questions)
+    
+    # Call OpenRouter
+    raw_response = await _call_openrouter(
+        client,
+        model,
+        messages,
+        reasoning,
+        session_id=session_id,
+        try_index=try_index,
+        instance_id=instance_id or model
+    )
+    
+    # Extract rubric text from response
+    rubric_text = ""
+    validation_errors = None
+    
+    try:
+        choices = raw_response.get("choices") or []
+        if not choices:
+            validation_errors = {"reason": "no_choices"}
+        else:
+            msg = choices[0].get("message", {})
+            content = msg.get("content")
+            
+            if isinstance(content, str):
+                rubric_text = content.strip()
+            elif isinstance(content, list):
+                # Concatenate text parts
+                parts = []
+                for c in content:
+                    if isinstance(c, dict) and c.get("type") == "text":
+                        parts.append(c.get("text", ""))
+                rubric_text = "\n".join(parts).strip()
+            else:
+                validation_errors = {"reason": "unsupported_content_type"}
+    except Exception as e:
+        validation_errors = {"reason": "parse_exception", "error": str(e)}
+    
+    # Store in rubric_result table
+    model_identifier = instance_id if instance_id else model
+    rubric_record = {
+        "session_id": session_id,
+        "model_name": model_identifier,
+        "try_index": try_index,
+        "rubric_response": rubric_text if rubric_text else None,
+        "raw_output": raw_response,
+        "validation_errors": validation_errors,
+    }
+    
+    try:
+        supabase.table("rubric_result").upsert(
+            rubric_record,
+            on_conflict="session_id,model_name,try_index"
+        ).execute()
+        
+        if OPENROUTER_DEBUG:
+            logging.info("✅ Saved rubric result for %s (try %s): %s chars",
+                       model_identifier, try_index, len(rubric_text) if rubric_text else 0)
+    except Exception as e:
+        logging.error("Failed to store rubric result: %s", e)
+    
+    # Log to session log
+    try:
+        _append_session_log(
+            session_id,
+            f"RUBRIC_EXTRACTED model={model} instance_id={instance_id or ''} try={try_index}\n" +
+            f"Rubric text ({len(rubric_text)} chars): {rubric_text[:500]}..."
+        )
+    except Exception:
+        pass
+    
+    if not rubric_text and validation_errors:
+        logging.warning("Rubric LLM failed to extract text: %s", validation_errors)
+    
+    return rubric_text
+
+
+def _build_messages(
+    student_urls: List[str],
+    key_urls: List[str],
+    questions: List[Dict[str, Any]],
+    rubric_text: str | None = None  # NEW PARAMETER
+) -> List[Dict[str, Any]]:
     """Build OpenRouter chat messages using DB-configured templates when available.
 
     Placeholders supported:
@@ -419,9 +682,21 @@ def _build_messages(student_urls: List[str], key_urls: List[str], questions: Lis
         # System messages must be plain text for compatibility with all models
         sys_text = sys_template
         
+        if OPENROUTER_DEBUG:
+            logging.info("🔍 Rubric text parameter: %s chars, is None: %s, is empty: %s",
+                       len(rubric_text) if rubric_text else 0,
+                       rubric_text is None,
+                       rubric_text == "" if rubric_text is not None else "N/A")
+        
         # Replace text-only placeholders in system message
         if "[Question list]" in sys_text:
             sys_text = sys_text.replace("[Question list]", questions_list)
+        
+        # NEW: Replace [Grading Rubric] placeholder with rubric text
+        if rubric_text and "[Grading Rubric]" in sys_text:
+            sys_text = sys_text.replace("[Grading Rubric]", rubric_text)
+            if OPENROUTER_DEBUG:
+                logging.info("✅ Replaced [Grading Rubric] in system template with %s chars", len(rubric_text))
         
         if "[Response schema]" in sys_text:
             sys_text = sys_text.replace("[Response schema]", schema_text)
@@ -440,8 +715,18 @@ def _build_messages(student_urls: List[str], key_urls: List[str], questions: Lis
             "[Answer key]": ("images", key_urls_norm),
             "[Student assessment]": ("images", stu_urls),
             "[Question list]": ("text", questions_list),
-            "[Response schema]": ("text", schema_text)
+            "[Response schema]": ("text", schema_text),
+            "[Grading Rubric]": ("text", rubric_text if rubric_text else "")
         }
+        
+        if OPENROUTER_DEBUG:
+            logging.info("🔍 Placeholders defined:")
+            for ph, (ptype, pcontent) in placeholders.items():
+                if ptype == "text":
+                    logging.info("  - %s: type=%s, content_length=%s, is_empty=%s",
+                               ph, ptype, len(pcontent) if pcontent else 0, not pcontent)
+                else:
+                    logging.info("  - %s: type=%s, count=%s", ph, ptype, len(pcontent) if pcontent else 0)
         
         # Find all placeholders in the template and their positions
         placeholder_positions = []
@@ -449,6 +734,8 @@ def _build_messages(student_urls: List[str], key_urls: List[str], questions: Lis
             index = remaining_template.find(placeholder)
             if index != -1:
                 placeholder_positions.append((index, placeholder, content_type, content))
+                if OPENROUTER_DEBUG:
+                    logging.info("  ✓ Found %s at position %s", placeholder, index)
         
         # Sort by position
         placeholder_positions.sort(key=lambda x: x[0])
@@ -472,6 +759,11 @@ def _build_messages(student_urls: List[str], key_urls: List[str], questions: Lis
                     elif content_type == "text" and content:
                         # Add text content
                         user_content.append({"type": "text", "text": content})
+                        if OPENROUTER_DEBUG and placeholder == "[Grading Rubric]":
+                            logging.info("✅ Added [Grading Rubric] content: %s chars", len(content))
+                else:
+                    if OPENROUTER_DEBUG and placeholder == "[Grading Rubric]":
+                        logging.warning("⚠️ [Grading Rubric] placeholder found but content is empty/falsy: %s", repr(content))
                 
                 # Move position past the placeholder
                 current_pos = index + len(placeholder)
@@ -582,6 +874,69 @@ def _extract_token_usage(raw: Dict[str, Any]) -> Dict[str, Any] | None:
         return None
 
 
+def _repair_json_string(text: str) -> str:
+    """Attempt basic JSON repair for common LLM output issues.
+    
+    This function handles:
+    - Markdown code fences (```json)
+    - Extra text after the closing brace
+    - Trailing commas
+    """
+    text = text.strip()
+    
+    # Remove markdown code fences
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    
+    if text.endswith("```"):
+        text = text[:-3]
+    
+    text = text.strip()
+    
+    # Find the JSON object using brace matching
+    start = text.find("{")
+    if start == -1:
+        return text
+    
+    # Match braces to find the actual end of JSON
+    brace_count = 0
+    end = -1
+    in_string = False
+    escape_next = False
+    
+    for i in range(start, len(text)):
+        char = text[i]
+        
+        if escape_next:
+            escape_next = False
+            continue
+        
+        if char == '\\':
+            escape_next = True
+            continue
+        
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+        
+        if not in_string:
+            if char == '{':
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    end = i
+                    break
+    
+    if end != -1:
+        # Extract only the JSON portion
+        return text[start:end + 1]
+    
+    return text
+
+
 def _parse_model_output(raw: Dict[str, Any]) -> Tuple[List[Dict[str, Any]] | None, Dict[str, Any] | None]:
     """Attempt to parse the first choice content as JSON with expected schema.
     Returns (answers, validation_errors)."""
@@ -603,13 +958,77 @@ def _parse_model_output(raw: Dict[str, Any]) -> Tuple[List[Dict[str, Any]] | Non
         else:
             return None, {"reason": "unsupported_content_type"}
 
-        # Try to locate JSON block
+        # Try to locate JSON block with improved parsing
         text = text.strip()
+        
+        # Remove markdown code fences if present
+        if text.startswith("```json"):
+            text = text[7:]  # Remove ```json
+        elif text.startswith("```"):
+            text = text[3:]  # Remove ```
+        
+        if text.endswith("```"):
+            text = text[:-3]
+        
+        text = text.strip()
+        
+        # Find the first opening brace
         start = text.find("{")
-        end = text.rfind("}")
-        if start == -1 or end == -1 or end <= start:
+        if start == -1:
             return None, {"reason": "no_json_in_content", "preview": text[:200]}
-        obj = json.loads(text[start : end + 1])
+        
+        # Use brace matching to find the MATCHING closing brace
+        # This handles nested objects correctly
+        brace_count = 0
+        end = -1
+        in_string = False
+        escape_next = False
+        
+        for i in range(start, len(text)):
+            char = text[i]
+            
+            # Handle string escaping
+            if escape_next:
+                escape_next = False
+                continue
+            
+            if char == '\\':
+                escape_next = True
+                continue
+            
+            # Track if we're inside a string (to ignore braces in strings)
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            
+            # Only count braces outside of strings
+            if not in_string:
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        # Found the matching closing brace
+                        end = i
+                        break
+        
+        if end == -1:
+            # Fallback to rfind if brace matching fails
+            end = text.rfind("}")
+            if end == -1 or end <= start:
+                return None, {"reason": "no_json_in_content", "preview": text[:200]}
+        
+        # Extract ONLY the JSON portion (nothing after the closing brace)
+        json_str = text[start : end + 1]
+        
+        # Attempt to parse
+        try:
+            obj = json.loads(json_str)
+        except json.JSONDecodeError as json_err:
+            # If parsing still fails, log the problematic JSON for debugging
+            logging.error("JSON parse error: %s", str(json_err))
+            logging.error("Attempted to parse: %s", json_str[:500])
+            return None, {"reason": "parse_exception", "error": str(json_err), "json_preview": json_str[:200]}
         
         # Extract student info if present (for future use/logging)
         student_info = {
@@ -791,6 +1210,7 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
     )
     student_urls = [r["url"] for r in (imgs.data or []) if r.get("role") == "student"]
     key_urls = [r["url"] for r in (imgs.data or []) if r.get("role") == "answer_key"]
+    rubric_urls = [r["url"] for r in (imgs.data or []) if r.get("role") == "grading_rubric"]  # NEW
     if not student_urls:
         raise _bad_request("no student images registered for session")
 
@@ -814,25 +1234,76 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
         for q in db_questions
     ]
 
+    # Determine if using new model_pairs or legacy models
+    use_model_pairs = payload.model_pairs is not None and len(payload.model_pairs) > 0
+    use_legacy_models = payload.models is not None and len(payload.models) > 0
+    
+    if not use_model_pairs and not use_legacy_models:
+        raise _bad_request("Either model_pairs or models must be provided")
+    
     # Expand model tries
-    items: List[Tuple[str, int, Dict[str, Any] | None, str | None]] = []
-    for m in payload.models:
-        model_name = m.name
-        tries = m.tries if m.tries and m.tries > 0 else (payload.default_tries or 1)
-        tries = max(1, tries)
-        # Use per-model reasoning if available, otherwise fall back to global
-        model_reasoning = m.reasoning if hasattr(m, 'reasoning') and m.reasoning else payload.reasoning
-        instance_id = m.instance_id if hasattr(m, 'instance_id') and m.instance_id else None
-        for i in range(1, tries + 1):
-            items.append((model_name, i, model_reasoning, instance_id))
+    if use_model_pairs:
+        # NEW: Model pairs flow (rubric + assessment)
+        # items: List[Tuple[rubric_model, assessment_model, try_index, rubric_reasoning, assessment_reasoning, instance_id]]
+        items: List[Tuple[str, str, int, Dict[str, Any] | None, Dict[str, Any] | None, str | None]] = []
+        
+        for pair_idx, pair in enumerate(payload.model_pairs):
+            rubric_model = pair.rubric_model.name
+            assessment_model = pair.assessment_model.name
+            
+            # Determine tries from assessment model (rubric runs same number of times)
+            tries = pair.assessment_model.tries if pair.assessment_model.tries and pair.assessment_model.tries > 0 else (payload.default_tries or 1)
+            tries = max(1, tries)
+            
+            # Get reasoning configs
+            rubric_reasoning = pair.rubric_model.reasoning if pair.rubric_model.reasoning else None
+            assessment_reasoning = pair.assessment_model.reasoning if pair.assessment_model.reasoning else payload.reasoning
+            
+            # Generate instance_id if not provided
+            pair_instance_id = pair.instance_id if pair.instance_id else f"pair_{pair_idx}_{rubric_model}_{assessment_model}"
+            
+            for i in range(1, tries + 1):
+                items.append((rubric_model, assessment_model, i, rubric_reasoning, assessment_reasoning, pair_instance_id))
+        
+        if OPENROUTER_DEBUG:
+            logging.info("🔗 Using model pairs flow: %s pairs expanded to %s tasks", len(payload.model_pairs), len(items))
+    else:
+        # LEGACY: Single models flow (no rubric)
+        # items: List[Tuple[model, try_index, reasoning, instance_id, None, None]]
+        # We'll use a compatible tuple structure for backward compat
+        items: List[Tuple[str, str | None, int, Dict[str, Any] | None, Dict[str, Any] | None, str | None]] = []
+        
+        for m in payload.models:
+            model_name = m.name
+            tries = m.tries if m.tries and m.tries > 0 else (payload.default_tries or 1)
+            tries = max(1, tries)
+            model_reasoning = m.reasoning if hasattr(m, 'reasoning') and m.reasoning else payload.reasoning
+            instance_id = m.instance_id if hasattr(m, 'instance_id') and m.instance_id else None
+            
+            for i in range(1, tries + 1):
+                # Legacy format: (model, None, try_index, reasoning, None, instance_id)
+                # None in position 1 indicates no rubric model (legacy flow)
+                items.append((model_name, None, i, model_reasoning, None, instance_id))
+        
+        if OPENROUTER_DEBUG:
+            logging.info("🔙 Using legacy single models flow: %s models expanded to %s tasks", len(payload.models), len(items))
 
-    # Persist session configuration for UI (selected models and default tries)
+    # Persist session configuration for UI
     try:
-        model_names = [m.name for m in payload.models]
-        supabase.table("session").update({
-            "selected_models": model_names,
-            "default_tries": payload.default_tries or 1,
-        }).eq("id", payload.session_id).execute()
+        if use_model_pairs:
+            rubric_models = [pair.rubric_model.name for pair in payload.model_pairs]
+            assessment_models = [pair.assessment_model.name for pair in payload.model_pairs]
+            supabase.table("session").update({
+                "rubric_models": rubric_models,
+                "assessment_models": assessment_models,
+                "default_tries": payload.default_tries or 1,
+            }).eq("id", payload.session_id).execute()
+        else:
+            model_names = [m.name for m in payload.models]
+            supabase.table("session").update({
+                "selected_models": model_names,
+                "default_tries": payload.default_tries or 1,
+            }).eq("id", payload.session_id).execute()
     except Exception:
         # Non-fatal if this fails; continue with grading
         pass
@@ -844,9 +1315,14 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
         pass
 
     semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
-    messages = _build_messages(student_urls, key_urls, questions)
-    # Debug: Log the exact system and user messages before any LLM request is made
-    if OPENROUTER_DEBUG:
+    
+    # Build messages for legacy flow only (model pairs build messages dynamically)
+    legacy_messages = None
+    if not use_model_pairs:
+        legacy_messages = _build_messages(student_urls, key_urls, questions)
+    
+    # Debug: Log the exact system and user messages for legacy flow
+    if OPENROUTER_DEBUG and legacy_messages:
         try:
             def _preview(obj: Any, limit: int = 2000) -> str:
                 try:
@@ -858,8 +1334,8 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
                 except Exception:
                     return "<unserializable>"
 
-            sys_msg = next((m.get("content") for m in messages if m.get("role") == "system"), None)
-            user_msg = next((m.get("content") for m in messages if m.get("role") == "user"), None)
+            sys_msg = next((m.get("content") for m in legacy_messages if m.get("role") == "system"), None)
+            user_msg = next((m.get("content") for m in legacy_messages if m.get("role") == "user"), None)
             
             logging.info("\n" + "="*80)
             logging.info("🔍 LLM REQUEST DETAILS")
@@ -893,10 +1369,10 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
         except Exception:
             logging.exception("Failed to log LLM messages preview")
     # Optional preflight checks to verify that image URLs are accessible (debug only)
-    if OPENROUTER_DEBUG:
+    if OPENROUTER_DEBUG and legacy_messages:
         try:
             urls: List[str] = []
-            user_msg = next((m.get("content") for m in messages if m.get("role") == "user"), [])
+            user_msg = next((m.get("content") for m in legacy_messages if m.get("role") == "user"), [])
             if isinstance(user_msg, list):
                 for part in user_msg:
                     if isinstance(part, dict) and part.get("type") == "image_url":
@@ -933,36 +1409,120 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
         headers["X-Title"] = OPENROUTER_APP_TITLE
 
     async with httpx.AsyncClient(headers=headers) as client:
-        async def run_task(model: str, try_index: int, reasoning: Dict[str, Any] | None, instance_id: str | None):
-            async with semaphore:
-                # Force Anthropic provider for Claude models to avoid Google Vertex routing issues
-                adjusted_model = model
-                if "claude" in model.lower():
-                    # If it's a Claude model without explicit provider, add anthropic provider
-                    if not model.startswith("anthropic/"):
-                        adjusted_model = f"anthropic/{model}"
-                    # Also ensure we're not using Google's hosted Claude
-                    adjusted_model = adjusted_model.replace("google/", "anthropic/")
+        if use_model_pairs:
+            # NEW: Model pairs flow (rubric + assessment)
+            async def run_task(rubric_model: str, assessment_model: str, try_index: int,
+                             rubric_reasoning: Dict[str, Any] | None, assessment_reasoning: Dict[str, Any] | None,
+                             instance_id: str | None):
+                async with semaphore:
+                    # STAGE 1: Call rubric LLM
+                    if OPENROUTER_DEBUG:
+                        logging.info("📖 [PAIR %s] Try %s: Starting rubric analysis with %s",
+                                   instance_id, try_index, rubric_model)
+                    
+                    rubric_text = ""
+                    if rubric_urls:
+                        try:
+                            rubric_text = await _call_rubric_llm(
+                                client,
+                                rubric_model,
+                                rubric_urls,
+                                questions,
+                                rubric_reasoning,
+                                payload.session_id,
+                                try_index,
+                                instance_id
+                            )
+                            if OPENROUTER_DEBUG:
+                                logging.info("✅ [PAIR %s] Try %s: Rubric extracted (%s chars)",
+                                           instance_id, try_index, len(rubric_text))
+                        except Exception as e:
+                            logging.error("❌ [PAIR %s] Try %s: Rubric LLM failed: %s",
+                                        instance_id, try_index, str(e))
+                            # Store error and skip assessment
+                            return rubric_model, assessment_model, try_index, None, None, instance_id, str(e)
+                    else:
+                        logging.warning("⚠️ No rubric images available, skipping rubric analysis")
+                    
+                    # STAGE 2: Call assessment LLM with rubric
+                    if OPENROUTER_DEBUG:
+                        logging.info("🎯 [PAIR %s] Try %s: Starting assessment with %s",
+                                   instance_id, try_index, assessment_model)
+                    
+                    # Build messages with rubric text
+                    messages = _build_messages(student_urls, key_urls, questions, rubric_text=rubric_text)
+                    
+                    # Force Anthropic provider for Claude models
+                    adjusted_model = assessment_model
+                    if "claude" in assessment_model.lower():
+                        if not assessment_model.startswith("anthropic/"):
+                            adjusted_model = f"anthropic/{assessment_model}"
+                        adjusted_model = adjusted_model.replace("google/", "anthropic/")
+                        if OPENROUTER_DEBUG:
+                            logging.info("🔄 Adjusted assessment model from '%s' to '%s'",
+                                       assessment_model, adjusted_model)
+                    
+                    data = await _call_openrouter(
+                        client,
+                        adjusted_model,
+                        messages,
+                        assessment_reasoning,
+                        session_id=payload.session_id,
+                        try_index=try_index,
+                        instance_id=instance_id,
+                    )
                     
                     if OPENROUTER_DEBUG:
-                        logging.info("🔄 Adjusted model name from '%s' to '%s' to force Anthropic provider", model, adjusted_model)
-                
-                data = await _call_openrouter(
-                    client,
-                    adjusted_model,
-                    messages,
-                    reasoning,
-                    session_id=payload.session_id,
-                    try_index=try_index,
-                    instance_id=instance_id,
-                )
-                return model, try_index, data, instance_id
-
-        tasks = [asyncio.create_task(run_task(model, t, reasoning, inst_id)) for model, t, reasoning, inst_id in items]
-        results: List[Tuple[str, int, Dict[str, Any], str | None]] = []
-        # Collect results and exceptions per task so one failure doesn't cancel all
+                        logging.info("✅ [PAIR %s] Try %s: Assessment complete", instance_id, try_index)
+                    
+                    return rubric_model, assessment_model, try_index, rubric_text, data, instance_id, None
+            
+            # Create tasks for model pairs
+            tasks = [
+                asyncio.create_task(run_task(rub_m, ass_m, t, rub_r, ass_r, inst_id))
+                for rub_m, ass_m, t, rub_r, ass_r, inst_id in items
+            ]
+        else:
+            # LEGACY: Single models flow
+            async def run_task(model: str, try_index: int, reasoning: Dict[str, Any] | None, instance_id: str | None):
+                async with semaphore:
+                    # Force Anthropic provider for Claude models
+                    adjusted_model = model
+                    if "claude" in model.lower():
+                        if not model.startswith("anthropic/"):
+                            adjusted_model = f"anthropic/{model}"
+                        adjusted_model = adjusted_model.replace("google/", "anthropic/")
+                        
+                        if OPENROUTER_DEBUG:
+                            logging.info("🔄 Adjusted model name from '%s' to '%s' to force Anthropic provider", model, adjusted_model)
+                    
+                    data = await _call_openrouter(
+                        client,
+                        adjusted_model,
+                        legacy_messages,
+                        reasoning,
+                        session_id=payload.session_id,
+                        try_index=try_index,
+                        instance_id=instance_id,
+                    )
+                    return model, try_index, data, instance_id
+            
+            # Create tasks for legacy single models
+            tasks = [
+                asyncio.create_task(run_task(model, t, reasoning, inst_id))
+                for model, _, t, reasoning, _, inst_id in items
+            ]
+        # Collect results - handle both legacy and new formats
+        if use_model_pairs:
+            # NEW format: (rubric_model, assessment_model, try_index, rubric_text, data, instance_id, error)
+            results: List[Tuple[str, str, int, str | None, Dict[str, Any] | None, str | None, str | None]] = []
+        else:
+            # LEGACY format: (model, try_index, data, instance_id)
+            results: List[Tuple[str, int, Dict[str, Any], str | None]] = []
+        
         gathered = await asyncio.gather(*tasks, return_exceptions=True)
         errors: List[Exception] = []
+        
         for r in gathered:
             if isinstance(r, Exception):
                 errors.append(r)
@@ -983,10 +1543,108 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
     upserts: List[Dict[str, Any]] = []
     token_usage_records: List[Dict[str, Any]] = []
     
-    for model, try_index, raw, instance_id in results:
-        # Use instance_id if available, otherwise use model name
-        # This allows differentiating same model with different reasoning
-        model_identifier = instance_id if instance_id else model
+    if use_model_pairs:
+        # NEW: Process model pair results
+        for rubric_model, assessment_model, try_index, rubric_text, raw, instance_id, error in results:
+            # Use instance_id as model identifier (represents the pair)
+            model_identifier = instance_id if instance_id else f"{rubric_model}_{assessment_model}"
+            
+            # If there was an error in rubric stage, skip assessment processing
+            if error:
+                logging.error("❌ Pair %s try %s failed at rubric stage: %s", model_identifier, try_index, error)
+                # Store error marker
+                upserts.append({
+                    "session_id": payload.session_id,
+                    "question_id": "__rubric_error__",
+                    "model_name": model_identifier,
+                    "try_index": try_index,
+                    "marks_awarded": None,
+                    "rubric_notes": None,
+                    "raw_output": {"error": error},
+                    "validation_errors": {"reason": "rubric_failed", "error": error},
+                })
+                continue
+            
+            # If no raw data (assessment didn't run), skip
+            if not raw:
+                continue
+            
+            # Extract token usage from assessment response
+            token_usage = _extract_token_usage(raw)
+            if token_usage:
+                token_usage_record = {
+                    "session_id": payload.session_id,
+                    "model_name": model_identifier,
+                    "try_index": try_index,
+                    "input_tokens": token_usage.get("input_tokens", 0),
+                    "output_tokens": token_usage.get("output_tokens", 0),
+                    "reasoning_tokens": token_usage.get("reasoning_tokens", 0),
+                    "cache_creation_input_tokens": token_usage.get("cache_creation_input_tokens", 0),
+                    "cache_read_input_tokens": token_usage.get("cache_read_input_tokens", 0),
+                    "model_id": token_usage.get("model_id"),
+                    "finish_reason": token_usage.get("finish_reason"),
+                    "cost_estimate": token_usage.get("cost_estimate"),
+                    "metadata": {"raw_usage": raw.get("usage", {}), "pair": {"rubric": rubric_model, "assessment": assessment_model}},
+                }
+                token_usage_records.append(token_usage_record)
+                
+                if OPENROUTER_DEBUG:
+                    logging.info("📊 Token usage for %s (try %s): input=%s, output=%s, reasoning=%s",
+                               model_identifier, try_index,
+                               token_usage.get("input_tokens", 0),
+                               token_usage.get("output_tokens", 0),
+                               token_usage.get("reasoning_tokens", 0))
+            
+            # Parse assessment response
+            answers, verr = _parse_model_output(raw)
+            if answers:
+                any_valid_answers = True
+                try:
+                    _append_session_log(
+                        payload.session_id,
+                        f"PARSED_PAIR rubric={rubric_model} assessment={assessment_model} instance_id={instance_id or ''} try={try_index}\n" +
+                        _json_pp({"answers": answers})
+                    )
+                except Exception:
+                    logging.exception("Failed to log parsed answers")
+                
+                for a in answers:
+                    upserts.append({
+                        "session_id": payload.session_id,
+                        "question_id": a.get("question_id"),
+                        "model_name": model_identifier,
+                        "try_index": try_index,
+                        "marks_awarded": a.get("marks_awarded"),
+                        "rubric_notes": a.get("rubric_notes"),
+                        "raw_output": raw,
+                        "validation_errors": None,
+                    })
+            else:
+                # Record validation error
+                try:
+                    _append_session_log(
+                        payload.session_id,
+                        f"PARSE_ERROR_PAIR rubric={rubric_model} assessment={assessment_model} instance_id={instance_id or ''} try={try_index}\n" +
+                        _json_pp(verr)
+                    )
+                except Exception:
+                    logging.exception("Failed to log parse error")
+                
+                upserts.append({
+                    "session_id": payload.session_id,
+                    "question_id": "__parse_error__",
+                    "model_name": model_identifier,
+                    "try_index": try_index,
+                    "marks_awarded": None,
+                    "rubric_notes": None,
+                    "raw_output": raw,
+                    "validation_errors": verr,
+                })
+    else:
+        # LEGACY: Process single model results
+        for model, try_index, raw, instance_id in results:
+            # Use instance_id if available, otherwise use model name
+            model_identifier = instance_id if instance_id else model
         
         # Extract token usage from the raw response
         token_usage = _extract_token_usage(raw)
@@ -1081,15 +1739,67 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
                 unique_map[key] = r
         if unique_map:
             upserts = list(unique_map.values())
-        try:
-            supabase.table("result").upsert(
-                upserts,
-                on_conflict="session_id,question_id,model_name,try_index",
-            ).execute()
-        except Exception as e:
-            # Do not fail the entire request; mark session failed
-            supabase.table("session").update({"status": "failed"}).eq("id", payload.session_id).execute()
-            raise HTTPException(status_code=500, detail=f"failed to persist results: {e}")
+        
+        # Batch upserts to avoid SSL issues with large payloads
+        BATCH_SIZE = 50  # Process 50 records at a time
+        total_batches = (len(upserts) + BATCH_SIZE - 1) // BATCH_SIZE
+        
+        if OPENROUTER_DEBUG:
+            logging.info("📦 Upserting %s records in %s batches (batch size: %s)", 
+                        len(upserts), total_batches, BATCH_SIZE)
+        
+        for batch_idx in range(0, len(upserts), BATCH_SIZE):
+            batch = upserts[batch_idx:batch_idx + BATCH_SIZE]
+            batch_num = (batch_idx // BATCH_SIZE) + 1
+            
+            # Retry logic with exponential backoff for SSL errors
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    if OPENROUTER_DEBUG and len(upserts) > BATCH_SIZE:
+                        logging.info("  📤 Batch %s/%s: Upserting %s records (attempt %s/%s)", 
+                                   batch_num, total_batches, len(batch), attempt + 1, max_retries)
+                    
+                    supabase.table("result").upsert(
+                        batch,
+                        on_conflict="session_id,question_id,model_name,try_index",
+                    ).execute()
+                    
+                    if OPENROUTER_DEBUG and len(upserts) > BATCH_SIZE:
+                        logging.info("  ✅ Batch %s/%s: Success", batch_num, total_batches)
+                    
+                    break  # Success, move to next batch
+                    
+                except Exception as e:
+                    error_str = str(e).lower()
+                    is_retryable = any(x in error_str for x in [
+                        'ssl', 'eof', 'connection', 'timeout', 'broken pipe', 
+                        'network', 'socket', 'timed out'
+                    ])
+                    
+                    if attempt < max_retries - 1 and is_retryable:
+                        # Retryable error, wait and retry
+                        wait_time = (2 ** attempt)  # 1s, 2s, 4s
+                        logging.warning("⚠️ Batch %s/%s failed (attempt %s/%s): %s - Retrying in %ss...", 
+                                      batch_num, total_batches, attempt + 1, max_retries, 
+                                      str(e)[:100], wait_time)
+                        await asyncio.sleep(wait_time)
+                    else:
+                        # Final attempt failed or non-retryable error
+                        logging.error("❌ Batch %s/%s failed after %s attempts: %s", 
+                                    batch_num, total_batches, attempt + 1, str(e))
+                        # Mark session failed
+                        try:
+                            supabase.table("session").update({"status": "failed"}).eq("id", payload.session_id).execute()
+                        except Exception:
+                            pass
+                        raise HTTPException(
+                            status_code=500, 
+                            detail=f"failed to persist results (batch {batch_num}/{total_batches}, attempt {attempt + 1}/{max_retries}): {e}"
+                        )
+        
+        if OPENROUTER_DEBUG and len(upserts) > BATCH_SIZE:
+            logging.info("✅ All %s batches completed successfully", total_batches)
     
     # Persist token usage data
     if token_usage_records:

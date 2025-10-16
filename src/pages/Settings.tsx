@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { getPromptSettings, putPromptSettings, PromptSettingsRes } from '../utils/api';
+import { getPromptSettings, putPromptSettings, PromptSettingsRes, getRubricPromptSettings, putRubricPromptSettings, RubricPromptSettingsRes, getTemplates, saveTemplate, deleteTemplate, Template } from '../utils/api';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { Save, RefreshCw, FolderOpen, FileEdit, AlertCircle, FileText, Settings as SettingsIcon } from 'lucide-react';
+import { Save, RefreshCw, FolderOpen, FileEdit, AlertCircle, FileText, Settings as SettingsIcon, Plus, Trash2 } from 'lucide-react';
 
 interface EnvConfig {
   api_key: string;
@@ -13,7 +13,7 @@ interface EnvConfig {
 
 export const Settings: React.FC = () => {
   // Tab state
-  const [activeTab, setActiveTab] = useState<'prompt' | 'environment'>('prompt');
+  const [activeTab, setActiveTab] = useState<'prompt' | 'rubric-prompt' | 'environment'>('prompt');
   
   // Prompt settings state
   const [loading, setLoading] = useState(true);
@@ -24,6 +24,19 @@ export const Settings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [initial, setInitial] = useState<PromptSettingsRes | null>(null);
+  
+  // Rubric prompt settings state
+  const [rubricSystemTemplate, setRubricSystemTemplate] = useState('');
+  const [rubricUserTemplate, setRubricUserTemplate] = useState('');
+  const [rubricSaving, setRubricSaving] = useState(false);
+  const [rubricInitial, setRubricInitial] = useState<RubricPromptSettingsRes | null>(null);
+  
+  // Template management state
+  const [rubricTemplates, setRubricTemplates] = useState<Template[]>([]);
+  const [assessmentTemplates, setAssessmentTemplates] = useState<Template[]>([]);
+  const [selectedRubricTemplate, setSelectedRubricTemplate] = useState<string>('');
+  const [selectedAssessmentTemplate, setSelectedAssessmentTemplate] = useState<string>('');
+  const [templatesLoading, setTemplatesLoading] = useState(true);
   
   // Environment settings state
   const [envConfig, setEnvConfig] = useState<EnvConfig>({
@@ -43,6 +56,8 @@ export const Settings: React.FC = () => {
 
   useEffect(() => {
     loadPromptSettings();
+    loadRubricPromptSettings();
+    loadTemplates();
     if (isTauri()) {
       loadEnvConfig();
       
@@ -81,6 +96,25 @@ export const Settings: React.FC = () => {
     }
   };
 
+  const loadRubricPromptSettings = async () => {
+    try {
+      console.log('🔍 Loading rubric prompt settings...');
+      const data = await getRubricPromptSettings();
+      console.log('📦 Received rubric settings:', data);
+      
+      setRubricSystemTemplate(data.system_template || '');
+      setRubricUserTemplate(data.user_template || '');
+      setRubricInitial(data);
+      
+      if (!data.system_template || !data.user_template) {
+        console.warn('⚠️ Some rubric settings are using defaults.');
+      }
+    } catch (e: any) {
+      console.error('❌ Failed to load rubric settings:', e);
+      setError(e?.message || 'Failed to load rubric settings');
+    }
+  };
+
   const loadEnvConfig = async () => {
     try {
       setEnvLoading(true);
@@ -91,6 +125,109 @@ export const Settings: React.FC = () => {
       // Keep default values
     } finally {
       setEnvLoading(false);
+    }
+  };
+
+  const loadTemplates = async () => {
+    try {
+      setTemplatesLoading(true);
+      const [rubricRes, assessmentRes] = await Promise.all([
+        getTemplates('rubric'),
+        getTemplates('assessment')
+      ]);
+      setRubricTemplates(rubricRes.templates);
+      setAssessmentTemplates(assessmentRes.templates);
+      
+      // Auto-select default template and load its content
+      if (rubricRes.templates.length > 0) {
+        const defaultTemplate = rubricRes.templates.find(t => t.name === 'default');
+        if (defaultTemplate) {
+          setSelectedRubricTemplate('default');
+          setRubricSystemTemplate(defaultTemplate.system_template);
+          setRubricUserTemplate(defaultTemplate.user_template);
+        }
+      }
+      
+      if (assessmentRes.templates.length > 0) {
+        const defaultTemplate = assessmentRes.templates.find(t => t.name === 'default');
+        if (defaultTemplate) {
+          setSelectedAssessmentTemplate('default');
+          setSystemTemplate(defaultTemplate.system_template);
+          setUserTemplate(defaultTemplate.user_template);
+          setSchemaTemplate(defaultTemplate.schema_template || '');
+        }
+      }
+    } catch (e: any) {
+      console.error('Failed to load templates:', e);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  };
+
+  const handleRubricTemplateSelect = (templateName: string) => {
+    setSelectedRubricTemplate(templateName);
+    const template = rubricTemplates.find(t => t.name === templateName);
+    if (template) {
+      setRubricSystemTemplate(template.system_template);
+      setRubricUserTemplate(template.user_template);
+    }
+  };
+
+  const handleAssessmentTemplateSelect = (templateName: string) => {
+    setSelectedAssessmentTemplate(templateName);
+    const template = assessmentTemplates.find(t => t.name === templateName);
+    if (template) {
+      setSystemTemplate(template.system_template);
+      setUserTemplate(template.user_template);
+      setSchemaTemplate(template.schema_template || '');
+    }
+  };
+
+  const handleSaveAsNewTemplate = async (type: 'rubric' | 'assessment') => {
+    const templateName = prompt(`Enter a name for the new ${type} template:`);
+    if (!templateName || !templateName.trim()) return;
+    
+    const cleanName = templateName.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    
+    try {
+      if (type === 'rubric') {
+        await saveTemplate('rubric', cleanName, {
+          display_name: templateName.trim(),
+          system_template: rubricSystemTemplate,
+          user_template: rubricUserTemplate
+        });
+        setSuccess(`Rubric template "${templateName}" saved successfully!`);
+      } else {
+        await saveTemplate('assessment', cleanName, {
+          display_name: templateName.trim(),
+          system_template: systemTemplate,
+          user_template: userTemplate,
+          schema_template: schemaTemplate
+        });
+        setSuccess(`Assessment template "${templateName}" saved successfully!`);
+      }
+      await loadTemplates(); // Reload templates
+    } catch (e: any) {
+      setError(`Failed to save template: ${e.message}`);
+    }
+  };
+
+  const handleDeleteTemplate = async (type: 'rubric' | 'assessment', templateName: string) => {
+    if (!confirm(`Are you sure you want to delete the template "${templateName}"?`)) return;
+    
+    try {
+      await deleteTemplate(type, templateName);
+      setSuccess(`Template "${templateName}" deleted successfully!`);
+      await loadTemplates(); // Reload templates
+      
+      // Clear selection if deleted template was selected
+      if (type === 'rubric' && selectedRubricTemplate === templateName) {
+        setSelectedRubricTemplate('');
+      } else if (type === 'assessment' && selectedAssessmentTemplate === templateName) {
+        setSelectedAssessmentTemplate('');
+      }
+    } catch (e: any) {
+      setError(`Failed to delete template: ${e.message}`);
     }
   };
 
@@ -106,19 +243,80 @@ export const Settings: React.FC = () => {
     console.log('💾 Saving prompt settings...');
     setSaving(true);
     try {
-      const res = await putPromptSettings({ 
-        system_template: systemTemplate, 
-        user_template: userTemplate,
-        schema_template: schemaTemplate
-      });
-      console.log('✅ Settings saved successfully:', res);
-      setInitial(res);
-      setSuccess('Prompt settings saved successfully. New grading sessions will use these templates.');
+      // If a template is selected, save to that template
+      if (selectedAssessmentTemplate) {
+        await saveTemplate('assessment', selectedAssessmentTemplate, {
+          display_name: assessmentTemplates.find(t => t.name === selectedAssessmentTemplate)?.display_name || selectedAssessmentTemplate,
+          system_template: systemTemplate,
+          user_template: userTemplate,
+          schema_template: schemaTemplate
+        });
+        setSuccess(`Template "${selectedAssessmentTemplate}" saved successfully!`);
+        await loadTemplates(); // Reload to get updated template
+      } else {
+        // Fallback: save to original settings (shouldn't happen with auto-select)
+        const res = await putPromptSettings({ 
+          system_template: systemTemplate, 
+          user_template: userTemplate,
+          schema_template: schemaTemplate
+        });
+        console.log('✅ Settings saved successfully:', res);
+        setInitial(res);
+        setSuccess('Prompt settings saved successfully!');
+      }
     } catch (e: any) {
       console.error('❌ Failed to save settings:', e);
       setError(e?.message || 'Failed to save settings');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onSaveRubricPrompt(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    if (!rubricSystemTemplate.trim() || !rubricUserTemplate.trim()) {
+      setError('System and User templates are both required for rubric prompts.');
+      return;
+    }
+    
+    console.log('💾 Saving rubric prompt settings...');
+    setRubricSaving(true);
+    try {
+      // If a template is selected, save to that template
+      if (selectedRubricTemplate) {
+        await saveTemplate('rubric', selectedRubricTemplate, {
+          display_name: rubricTemplates.find(t => t.name === selectedRubricTemplate)?.display_name || selectedRubricTemplate,
+          system_template: rubricSystemTemplate,
+          user_template: rubricUserTemplate
+        });
+        setSuccess(`Template "${selectedRubricTemplate}" saved successfully!`);
+        await loadTemplates(); // Reload to get updated template
+      } else {
+        // Fallback: save to original settings (shouldn't happen with auto-select)
+        const res = await putRubricPromptSettings({ 
+          system_template: rubricSystemTemplate, 
+          user_template: rubricUserTemplate
+        });
+        console.log('✅ Rubric settings saved successfully:', res);
+        setRubricInitial(res);
+        setSuccess('Rubric prompt settings saved successfully. New grading sessions will use these templates.');
+      }
+    } catch (e: any) {
+      console.error('❌ Failed to save rubric settings:', e);
+      setError(e?.message || 'Failed to save rubric settings');
+    } finally {
+      setRubricSaving(false);
+    }
+  }
+
+  function onResetRubric() {
+    if (rubricInitial) {
+      setRubricSystemTemplate(rubricInitial.system_template);
+      setRubricUserTemplate(rubricInitial.user_template);
+      setSuccess(null);
+      setError(null);
     }
   }
 
@@ -211,8 +409,19 @@ export const Settings: React.FC = () => {
           >
             <FileText className="w-4 h-4" />
             LLM Prompt Settings
-          </button>
-          {isTauri() && (
+            </button>
+            <button
+          onClick={() => setActiveTab('rubric-prompt')}
+          className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+            activeTab === 'rubric-prompt'
+              ? 'border-blue-500 text-blue-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+          }`}
+        >
+          <FileText className="w-4 h-4" />
+          Rubric Prompt Settings
+        </button>
+        {isTauri() && (
             <button
               onClick={() => setActiveTab('environment')}
               className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
@@ -243,6 +452,47 @@ export const Settings: React.FC = () => {
           <div className="text-slate-600">Loading prompt settings…</div>
         ) : (
           <form onSubmit={onSavePrompt} className="space-y-6">
+            {/* Template Management */}
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+              <label className="block text-sm font-medium text-slate-700">Template</label>
+              <div className="flex gap-2">
+                <select
+                  value={selectedAssessmentTemplate}
+                  onChange={(e) => handleAssessmentTemplateSelect(e.target.value)}
+                  className="flex-1 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 px-3 py-2 text-sm"
+                >
+                  {assessmentTemplates.map(template => (
+                    <option key={template.name} value={template.name}>
+                      {template.display_name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => handleSaveAsNewTemplate('assessment')}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 text-sm"
+                  title="Save current settings as a new template"
+                >
+                  <Plus className="w-4 h-4" />
+                  Save as New
+                </button>
+                {selectedAssessmentTemplate && selectedAssessmentTemplate !== 'default' && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteTemplate('assessment', selectedAssessmentTemplate)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm"
+                    title="Delete selected template"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-slate-500">
+                Select a template to load, or save your current settings as a new template.
+              </p>
+            </div>
+
             <div className="space-y-2">
               <label className="block text-sm font-medium text-slate-700">System Template</label>
               <textarea
@@ -311,6 +561,100 @@ export const Settings: React.FC = () => {
               <button
                 type="button"
                 onClick={onReset}
+                className="inline-flex items-center px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
+                Revert Changes
+              </button>
+            </div>
+          </form>
+        )
+      ) : activeTab === 'rubric-prompt' ? (
+        loading ? (
+          <div className="text-slate-600">Loading rubric prompt settings…</div>
+        ) : (
+          <form onSubmit={onSaveRubricPrompt} className="space-y-6">
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
+              <h3 className="text-sm font-semibold text-purple-900 mb-2">About Rubric Prompts</h3>
+              <p className="text-sm text-purple-800">
+                These templates are used by the rubric analysis model to extract grading criteria from rubric images.
+                The rubric output is then passed to the assessment model for grading.
+              </p>
+            </div>
+
+            {/* Template Management */}
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+              <label className="block text-sm font-medium text-slate-700">Template</label>
+              <div className="flex gap-2">
+                <select
+                  value={selectedRubricTemplate}
+                  onChange={(e) => handleRubricTemplateSelect(e.target.value)}
+                  className="flex-1 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 px-3 py-2 text-sm"
+                >
+                  {rubricTemplates.map(template => (
+                    <option key={template.name} value={template.name}>
+                      {template.display_name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => handleSaveAsNewTemplate('rubric')}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 text-sm"
+                  title="Save current settings as a new template"
+                >
+                  <Plus className="w-4 h-4" />
+                  Save as New
+                </button>
+                {selectedRubricTemplate && selectedRubricTemplate !== 'default' && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteTemplate('rubric', selectedRubricTemplate)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm"
+                    title="Delete selected template"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-slate-500">
+                Select a template to load, or save your current settings as a new template.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-slate-700">Rubric System Template</label>
+              <textarea
+                value={rubricSystemTemplate}
+                onChange={(e) => setRubricSystemTemplate(e.target.value)}
+                className="w-full min-h-[200px] rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 p-3 font-mono text-sm bg-white"
+                placeholder="Enter the system template for rubric analysis..."
+              />
+              <p className="text-xs text-slate-500">Supported placeholders: [Grading rubric images], [Question list]</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-slate-700">Rubric User Template</label>
+              <textarea
+                value={rubricUserTemplate}
+                onChange={(e) => setRubricUserTemplate(e.target.value)}
+                className="w-full min-h-[150px] rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 p-3 font-mono text-sm bg-white"
+                placeholder="Enter the user template for rubric analysis..."
+              />
+              <p className="text-xs text-slate-500">The instructions for analyzing the rubric images</p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={rubricSaving}
+                className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {rubricSaving ? 'Saving…' : 'Save Rubric Settings'}
+              </button>
+              <button
+                type="button"
+                onClick={onResetRubric}
                 className="inline-flex items-center px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
               >
                 Revert Changes

@@ -78,6 +78,34 @@ export async function getJSON<T>(path: string, init?: RequestInit): Promise<T> {
   return result;
 }
 
+export async function putJSON<T>(path: string, body: any, init?: RequestInit): Promise<T> {
+  const fullUrl = `${API_BASE}${path}`;
+  logApiCall('PUT', path, fullUrl);
+  
+  const resp = await fetch(fullUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
+    body: JSON.stringify(body),
+    ...init,
+  });
+  
+  console.log(`[API] Response status: ${resp.status}`);
+  
+  if (!resp.ok) {
+    const data = await parseJsonSafe<ErrorEnvelope>(resp);
+    const msg = data?.error?.message || `${resp.status} ${resp.statusText}`;
+    console.error(`[API] Error: ${msg}`);
+    const err: any = new Error(msg);
+    err.status = resp.status;
+    err.retryAfter = resp.headers.get('Retry-After');
+    throw err;
+  }
+  
+  const result = (await resp.json()) as T;
+  console.log('[API] Success');
+  return result;
+}
+
 export async function del(path: string, init?: RequestInit): Promise<void> {
   const fullUrl = `${API_BASE}${path}`;
   logApiCall('DELETE', path, fullUrl);
@@ -127,7 +155,7 @@ export async function uploadToSignedUrl(uploadUrl: string, headers: Record<strin
 }
 
 export interface OkRes { ok: boolean }
-export const registerImage = (session_id: string, role: 'student' | 'answer_key', url: string, order_index: number) =>
+export const registerImage = (session_id: string, role: 'student' | 'answer_key' | 'grading_rubric', url: string, order_index: number) =>
   postJSON<OkRes>('/images/register', { session_id, role, url, order_index });
 
 export interface QuestionConfigQuestion { 
@@ -143,15 +171,71 @@ export const postQuestionsConfig = (
   human_marks_by_qid: Record<string, number>
 ) => postJSON<OkRes>('/questions/config', { session_id, questions, human_marks_by_qid });
 
+// --- Grading API ---
+
 export interface GradeSingleRes { ok: boolean; session_id: string }
+
+// Model pair specification for grading
+export interface ModelPairSpec {
+  rubric_model: {
+    name: string;
+    tries?: number;
+    reasoning?: any;
+  };
+  assessment_model: {
+    name: string;
+    tries?: number;
+    reasoning?: any;
+  };
+  instance_id?: string;
+}
+
 export async function gradeSingleWithRetry(
-  session_id: string, 
-  models: string[], 
-  default_tries: number, 
+  session_id: string,
+  models: string[],
+  default_tries: number,
   reasoning?: any,
   reasoningBySelection?: any[],
-  maxAttempts = 5
+  maxAttempts = 5,
+  modelPairs?: ModelPairSpec[]  // NEW: Optional model pairs
 ): Promise<GradeSingleRes> {
+  // NEW: If model pairs provided, use new API format
+  if (modelPairs && modelPairs.length > 0) {
+    console.log('%c🔗 Using model pairs for grading:', 'color: #9C27B0; font-weight: bold');
+    modelPairs.forEach((pair, i) => {
+      console.log(`  Pair ${i + 1}:`);
+      console.log(`    Rubric: ${pair.rubric_model.name}`);
+      if (pair.rubric_model.reasoning) {
+        console.log(`      Reasoning: ${JSON.stringify(pair.rubric_model.reasoning)}`);
+      }
+      console.log(`    Assessment: ${pair.assessment_model.name}`);
+      if (pair.assessment_model.reasoning) {
+        console.log(`      Reasoning: ${JSON.stringify(pair.assessment_model.reasoning)}`);
+      }
+    });
+    
+    let attempt = 0;
+    while (true) {
+      try {
+        return await postJSON<GradeSingleRes>('/grade/single', {
+          session_id,
+          model_pairs: modelPairs,
+          default_tries,
+        });
+      } catch (e: any) {
+        attempt++;
+        if (e?.status === 429 && attempt < maxAttempts) {
+          const ra = Number(e.retryAfter || 2);
+          const backoff = (isFinite(ra) && ra > 0 ? ra : 2) * Math.pow(2, attempt - 1) * 1000;
+          await sleep(backoff);
+          continue;
+        }
+        throw e;
+      }
+    }
+  }
+  
+  // LEGACY: Single models approach
   // Create model specs with per-model reasoning
   const modelSpecs = models.map((name, index) => {
     const spec: any = { name };
@@ -257,6 +341,8 @@ export interface SessionListItem {
   name?: string;
   selected_models?: string[];
   default_tries?: number;
+  rubric_models?: string[];      // NEW: Rubric models for model pairs
+  assessment_models?: string[];  // NEW: Assessment models for model pairs
 }
 export const getSessions = () => {
   console.log('[API] getSessions called');
@@ -313,3 +399,71 @@ export const putPromptSettings = (body: PromptSettingsReq) => fetch(`${API_BASE}
   }
   return r.json() as Promise<PromptSettingsRes>;
 });
+
+// --- Rubric Prompt Settings ---
+export interface RubricPromptSettingsRes {
+  system_template: string;
+  user_template: string;
+}
+export type RubricPromptSettingsReq = RubricPromptSettingsRes;
+export const getRubricPromptSettings = () => getJSON<RubricPromptSettingsRes>(`/settings/rubric-prompt`);
+export const putRubricPromptSettings = (body: RubricPromptSettingsReq) => fetch(`${API_BASE}/settings/rubric-prompt`, {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+}).then(async (r) => {
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
+    throw new Error(`${r.status} ${r.statusText} ${text}`);
+  }
+  return r.json() as Promise<RubricPromptSettingsRes>;
+});
+
+// --- Rubric Results ---
+export interface RubricResultItem {
+  try_index: number;
+  rubric_response: string | null;
+  validation_errors: Record<string, any> | null;
+}
+
+export interface RubricResultsRes {
+  session_id: string;
+  rubric_results: Record<string, Record<string, RubricResultItem>>;
+}
+
+export const getRubricResults = (session_id: string) => getJSON<RubricResultsRes>(`/results/${session_id}/rubric`);
+
+// --- Template Management ---
+
+export interface Template {
+  name: string;
+  display_name: string;
+  system_template: string;
+  user_template: string;
+  schema_template?: string; // Only for assessment templates
+}
+
+export interface TemplateListRes {
+  templates: Template[];
+}
+
+export interface TemplateSaveReq {
+  display_name: string;
+  system_template: string;
+  user_template: string;
+  schema_template?: string;
+}
+
+export interface TemplateActionRes {
+  success: boolean;
+  message: string;
+}
+
+export const getTemplates = (type: 'rubric' | 'assessment') => 
+  getJSON<TemplateListRes>(`/settings/templates/${type}`);
+
+export const saveTemplate = (type: 'rubric' | 'assessment', name: string, data: TemplateSaveReq) =>
+  putJSON<TemplateActionRes>(`/settings/templates/${type}/${name}`, data);
+
+export const deleteTemplate = (type: 'rubric' | 'assessment', name: string) =>
+  del(`/settings/templates/${type}/${name}`);

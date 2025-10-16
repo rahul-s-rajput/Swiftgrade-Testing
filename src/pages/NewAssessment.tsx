@@ -1,72 +1,116 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, AlertCircle, Upload, Sparkles } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Upload, Sparkles, ArrowRight, Link2 } from 'lucide-react';
 import { useAssessments } from '../context/AssessmentContext';
 import { FileUpload } from '../components/FileUploadHTML5';
 import { MultiSelect } from '../components/MultiSelect';
 import { NumberInput } from '../components/NumberInput';
 import { useOpenRouterModels } from '../hooks/useOpenRouterModels';
 import { ReasoningLevel } from '../types';
+import { getTemplates, Template } from '../utils/api';
 
 export const NewAssessment: React.FC = () => {
   const navigate = useNavigate();
   const { addAssessment } = useAssessments();
   const { models, loading: modelsLoading, error: modelsError, refetch: refetchModels, modelInfoById } = useOpenRouterModels();
 
-  // Only show models that can accept image inputs for this workflow
   const imageModels = useMemo(() =>
     models.filter(m => !!modelInfoById?.[m.id]?.supportsImage),
     [models, modelInfoById]
   );
 
-  // If any previously selected model isn't image-capable, remove it silently
-  useEffect(() => {
-    if (!imageModels.length) return;
-    const allowed = new Set(imageModels.map(m => m.id));
-    setFormData(prev => {
-      const filtered = prev.selectedModels.filter(id => allowed.has(id));
-      if (filtered.length === prev.selectedModels.length) return prev;
-      return { ...prev, selectedModels: filtered };
-    });
-  }, [imageModels]);
-
   const [formData, setFormData] = useState({
     name: '',
     studentImages: [] as File[],
     answerKeyImages: [] as File[],
+    rubricImages: [] as File[],
     questions: '',
     humanGrades: '',
-    selectedModels: [] as string[],
     iterations: 1
   });
+
+  // Independent model selections (not paired until submission)
+  const [rubricModels, setRubricModels] = useState<string[]>([]);
+  const [assessmentModels, setAssessmentModels] = useState<string[]>([]);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Story 4: Reasoning configuration per selected selection (supports duplicates)
-  const [reasoningBySelection, setReasoningBySelection] = useState<Array<{ level: ReasoningLevel; tokens?: number }>>([]); // Using ReasoningLevel from types
+  const [rubricReasoningBySelection, setRubricReasoningBySelection] = useState<Array<{ level: ReasoningLevel; tokens?: number }>>([]);
+  const [assessmentReasoningBySelection, setAssessmentReasoningBySelection] = useState<Array<{ level: ReasoningLevel; tokens?: number }>>([]);
 
-  // Popover state for per-chip reasoning configuration
-  const [chipMenu, setChipMenu] = useState<{ index: number | null; id: string | null; anchor: { left: number; top: number } | null }>({ index: null, id: null, anchor: null });
+  // Template selection state
+  const [rubricTemplates, setRubricTemplates] = useState<Template[]>([]);
+  const [assessmentTemplates, setAssessmentTemplates] = useState<Template[]>([]);
+  const [selectedRubricTemplate, setSelectedRubricTemplate] = useState<string>('');
+  const [selectedAssessmentTemplate, setSelectedAssessmentTemplate] = useState<string>('');
+
+  const [chipMenu, setChipMenu] = useState<{ 
+    index: number | null; 
+    id: string | null; 
+    anchor: { left: number; top: number } | null; 
+    type: 'rubric' | 'assessment' | null 
+  }>({ index: null, id: null, anchor: null, type: null });
+  
   const popoverRef = useRef<HTMLDivElement | null>(null);
-  const chipMenuContainerRef = useRef<HTMLDivElement | null>(null);
+  const rubricContainerRef = useRef<HTMLDivElement | null>(null);
+  const assessmentContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       if (chipMenu.index === null) return;
       const target = e.target as Node;
       if (popoverRef.current && !popoverRef.current.contains(target)) {
-        setChipMenu({ index: null, id: null, anchor: null });
+        setChipMenu({ index: null, id: null, anchor: null, type: null });
       }
     };
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [chipMenu.index]);
 
-  // Ensure reasoning state stays in sync with selected models (index-aligned)
   useEffect(() => {
-    setReasoningBySelection(prev => formData.selectedModels.map((_, i) => prev[i] || { level: 'none' }));
-  }, [formData.selectedModels]);
+    setRubricReasoningBySelection(prev => 
+      rubricModels.map((_, i) => prev[i] || { level: 'none' })
+    );
+  }, [rubricModels.length]);
+
+  useEffect(() => {
+    setAssessmentReasoningBySelection(prev => 
+      assessmentModels.map((_, i) => prev[i] || { level: 'none' })
+    );
+  }, [assessmentModels.length]);
+
+  // Load templates on mount
+  useEffect(() => {
+    const loadTemplates = async () => {
+      try {
+        const [rubricRes, assessmentRes] = await Promise.all([
+          getTemplates('rubric'),
+          getTemplates('assessment')
+        ]);
+        setRubricTemplates(rubricRes.templates);
+        setAssessmentTemplates(assessmentRes.templates);
+        
+        // Auto-select default template
+        setSelectedRubricTemplate('default');
+        setSelectedAssessmentTemplate('default');
+      } catch (e) {
+        console.error('Failed to load templates:', e);
+      }
+    };
+    loadTemplates();
+  }, []);
+
+  // Create model pairs from independent selections
+  const modelPairs = useMemo(() => {
+    const maxLength = Math.max(rubricModels.length, assessmentModels.length);
+    return Array.from({ length: maxLength }, (_, i) => ({
+      rubricModel: rubricModels[i] || '',
+      assessmentModel: assessmentModels[i] || '',
+      rubricReasoning: rubricReasoningBySelection[i],
+      assessmentReasoning: assessmentReasoningBySelection[i]
+    }));
+  }, [rubricModels, assessmentModels, rubricReasoningBySelection, assessmentReasoningBySelection]);
 
   const renderOptionMeta = (id: string) => {
     const raw = modelInfoById?.[id]?.raw as { context_length?: number; pricing?: { prompt?: number | string; completion?: number | string } } | undefined;
@@ -101,8 +145,6 @@ export const NewAssessment: React.FC = () => {
       newErrors.studentImages = 'Please upload at least one student test image';
     }
 
-    // Answer key images are optional - system supports grading without answer keys
-
     if (!formData.questions.trim()) {
       newErrors.questions = 'Question list is required';
     }
@@ -111,8 +153,8 @@ export const NewAssessment: React.FC = () => {
       newErrors.humanGrades = 'Human graded marks are required';
     }
 
-    if (formData.selectedModels.length === 0) {
-      newErrors.selectedModels = 'Please select at least one AI model';
+    if (modelPairs.length === 0 || !modelPairs.some(p => p.rubricModel && p.assessmentModel)) {
+      newErrors.modelPairs = 'Please select at least one complete model pair (both rubric and assessment models)';
     }
 
     setErrors(newErrors);
@@ -129,42 +171,25 @@ export const NewAssessment: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      // Log final reasoning configuration before submission
-      console.log('[NewAssessment] Submitting assessment with reasoning configuration:', {
+      console.log('[NewAssessment] Submitting assessment with model pairs:', {
         assessmentName: formData.name,
-        selectedModels: formData.selectedModels,
-        reasoningBySelection: reasoningBySelection,
-        modelReasoningDetails: formData.selectedModels.map((modelId, index) => {
-          const modelInfo = modelInfoById?.[modelId];
-          const model = models.find(m => m.id === modelId);
-          const reasoning = reasoningBySelection[index];
-          return {
-            modelId,
-            modelName: model?.name || 'Unknown',
-            modelIndex: index,
-            supportsReasoning: modelInfo?.supportsReasoning || false,
-            reasoningType: modelInfo?.reasoningType || 'none',
-            reasoningLevel: reasoning?.level || 'none',
-            reasoningTokens: reasoning?.tokens,
-            willUseReasoning: reasoning?.level !== 'none' && (modelInfo?.supportsReasoning || false)
-          };
-        })
+        modelPairs: modelPairs,
       });
 
-      // Fire-and-forget: start assessment creation and grading in background
       void addAssessment({
         name: formData.name,
         studentImages: formData.studentImages,
         answerKeyImages: formData.answerKeyImages,
+        rubricImages: formData.rubricImages,
         questions: formData.questions,
         humanGrades: formData.humanGrades,
-        selectedModels: formData.selectedModels,
+        modelPairs: modelPairs,
+        selectedModels: [],
         iterations: formData.iterations,
-        reasoningBySelection: reasoningBySelection,
+        reasoningBySelection: [],
         status: 'running'
       });
 
-      // Immediately navigate back to dashboard to show running state
       navigate('/');
     } catch (error) {
       console.error('Failed to create assessment:', error);
@@ -242,6 +267,18 @@ export const NewAssessment: React.FC = () => {
                 )}
               </div>
 
+              {/* Rubric Images */}
+              <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6">
+                <FileUpload
+                  label="Upload Grading Rubric Images"
+                  files={formData.rubricImages}
+                  onChange={(files) => setFormData({ ...formData, rubricImages: files })}
+                />
+                <p className="text-xs text-slate-500 mt-2">
+                  Upload images of the grading rubric that will guide the AI assessment
+                </p>
+              </div>
+
               {/* Questions */}
               <div>
                 <label htmlFor="questions" className="block text-sm font-semibold text-slate-700 mb-3">
@@ -265,183 +302,6 @@ export const NewAssessment: React.FC = () => {
                   </div>
                 )}
               </div>
-
-              {/* AI Model Selection */}
-              <div>
-                {modelsLoading ? (
-                  <div className="flex items-center text-slate-600">
-                    <Upload className="w-4 h-4 mr-2 animate-spin" />
-                    Loading models...
-                  </div>
-                ) : modelsError ? (
-                  <div className="flex items-center justify-between gap-3 p-3 border border-red-200 rounded-lg bg-red-50">
-                    <div className="flex items-center text-sm text-red-700">
-                      <AlertCircle className="w-4 h-4 mr-1" />
-                      {modelsError}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={refetchModels}
-                      className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
-                    >
-                      Retry
-                    </button>
-                  </div>
-                ) : (
-                  <div ref={chipMenuContainerRef} className="relative">
-                  <MultiSelect
-                    label="Select AI Models for Testing"
-                    options={imageModels}
-                    selectedValues={formData.selectedModels}
-                    onChange={(values) => {
-                      const prev = formData.selectedModels;
-                      // Append case (allowDuplicates adds to end)
-                      if (values.length === prev.length + 1 && prev.every((v, i) => v === values[i])) {
-                        const newModelId = values[values.length - 1];
-                        const modelInfo = modelInfoById?.[newModelId];
-                        const model = models.find(m => m.id === newModelId);
-                        console.log('[NewAssessment] Model selected:', {
-                          modelId: newModelId,
-                          modelName: model?.name || 'Unknown',
-                          supportsReasoning: modelInfo?.supportsReasoning || false,
-                          reasoningType: modelInfo?.reasoningType || 'none',
-                          totalSelectedModels: values.length
-                        });
-                        setFormData({ ...formData, selectedModels: values });
-                        setReasoningBySelection(prevReasoning => [...prevReasoning, { level: 'none' }]);
-                        return;
-                      }
-                      // Removal case: detect removed index by first mismatch
-                      if (values.length + 1 === prev.length) {
-                        let removedIndex = values.length; // default: last
-                        for (let i = 0; i < values.length; i++) {
-                          if (values[i] !== prev[i]) { removedIndex = i; break; }
-                        }
-                        const removedModelId = prev[removedIndex];
-                        const model = models.find(m => m.id === removedModelId);
-                        console.log('[NewAssessment] Model removed:', {
-                          modelId: removedModelId,
-                          modelName: model?.name || 'Unknown',
-                          removedIndex,
-                          remainingModels: values.length
-                        });
-                        setFormData({ ...formData, selectedModels: values });
-                        setReasoningBySelection(prevReasoning => prevReasoning.filter((_, i) => i !== removedIndex));
-                        return;
-                      }
-                      // Fallback: length unchanged or other reorder - realign by index
-                      console.log('[NewAssessment] Models reordered or bulk changed:', {
-                        previousCount: prev.length,
-                        newCount: values.length,
-                        previousModels: prev.map(id => ({ id, name: models.find(m => m.id === id)?.name || 'Unknown' })),
-                        newModels: values.map(id => ({ id, name: models.find(m => m.id === id)?.name || 'Unknown' }))
-                      });
-                      setFormData({ ...formData, selectedModels: values });
-                      setReasoningBySelection(prevReasoning => values.map((_, i) => prevReasoning[i] || { level: 'none' }));
-                    }}
-                    placeholder="Choose models to evaluate..."
-                    dropdownPlacement="right"
-                    renderOptionMeta={renderOptionMeta}
-                    allowDuplicates
-                    maxPerOption={4}
-                    shouldShowChipMenuAt={(id, _index) => !!modelInfoById?.[id]?.supportsReasoning}
-                    getChipBadgeAt={(_id, index) => {
-                       const conf = reasoningBySelection[index];
-                       if (!conf || conf.level === 'none') return (
-                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/70 text-slate-600 border">None</span>
-                       );
-                       return (
-                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/70 text-slate-700 border">{conf.level.charAt(0).toUpperCase() + conf.level.slice(1)}</span>
-                       );
-                     }}
-                    onChipMenuRequestAt={(id, index, rect) => {
-                      const containerRect = chipMenuContainerRef.current?.getBoundingClientRect();
-                      const left = containerRect ? (rect.right - containerRect.left + 6) : (rect.right + 6);
-                      const top = containerRect ? (rect.top - containerRect.top + rect.height / 2) : (rect.top + rect.height / 2);
-                      setChipMenu({ index, id, anchor: { left, top } });
-                    }}
-                  />
-                  {/* Popover for per-chip reasoning configuration */}
-                  {chipMenu.index !== null && chipMenu.anchor && (
-                    <div
-                      ref={popoverRef}
-                      className="absolute z-50 bg-white border rounded-lg shadow-lg p-2 w-56 transform -translate-y-1/2"
-                      style={{ left: chipMenu.anchor.left, top: chipMenu.anchor.top }}
-                    >
-                      {(() => {
-                        const idx = chipMenu.index as number;
-                        const id = (chipMenu.id as string) || formData.selectedModels[idx];
-                        const info = modelInfoById?.[id];
-                        const supportsReasoning = info?.supportsReasoning ?? false;
-                        const conf = reasoningBySelection[idx] || { level: 'none' as ReasoningLevel };
-                        const options: ReasoningLevel[] = !supportsReasoning
-                          ? ['none']
-                          : ['none', 'low', 'medium', 'high'];
-                        const currentLevel: ReasoningLevel = (options.includes(conf.level) ? conf.level : 'none');
-                        return (
-                          <div className="space-y-2">
-                            {supportsReasoning ? (
-                              <>
-                                <div className="flex flex-col gap-1">
-                                  {options.filter(opt => opt !== 'custom').map(opt => (
-                                    <button
-                                      key={opt}
-                                      type="button"
-                                      className={`w-full text-left px-2 py-1 rounded text-sm hover:bg-slate-50 ${currentLevel === opt ? 'bg-slate-100' : ''}`}
-                                      onClick={() => {
-                                        const modelId = formData.selectedModels[idx];
-                                          const modelInfo = modelInfoById?.[modelId];
-                                          const model = models.find(m => m.id === modelId);
-                                          console.log('[NewAssessment] Reasoning level changed:', {
-                                            modelId,
-                                            modelName: model?.name || 'Unknown',
-                                            modelIndex: idx,
-                                            previousLevel: reasoningBySelection[idx]?.level || 'none',
-                                            newLevel: opt,
-                                            reasoningType: modelInfo?.reasoningType || 'none'
-                                          });
-                                        setReasoningBySelection(prev => {
-                                          const next = [...prev];
-                                          next[idx] = { level: opt };
-                                          return next;
-                                        });
-                                        setChipMenu({ index: null, id: null, anchor: null });
-                                      }}
-                                    >
-                                      {opt.charAt(0).toUpperCase() + opt.slice(1)}
-                                    </button>
-                                  ))}
-
-                                </div>
-                              </>
-                            ) : (
-                              <div className="text-xs text-slate-500 px-2 py-1">Reasoning not supported</div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-                  </div>
-                )}
-                {formData.selectedModels.length > 0 && (
-                  <div className="mt-2 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, selectedModels: [] })}
-                      className="text-sm text-slate-600 hover:text-slate-900 underline"
-                    >
-                      Clear all
-                    </button>
-                  </div>
-                )}
-                {errors.selectedModels && (
-                  <div className="mt-2 flex items-center text-sm text-red-600">
-                    <AlertCircle className="w-4 h-4 mr-1" />
-                    {errors.selectedModels}
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Right Column */}
@@ -453,12 +313,6 @@ export const NewAssessment: React.FC = () => {
                   files={formData.answerKeyImages}
                   onChange={(files) => setFormData({ ...formData, answerKeyImages: files })}
                 />
-                {errors.answerKeyImages && (
-                  <div className="mt-2 flex items-center text-sm text-red-600">
-                    <AlertCircle className="w-4 h-4 mr-1" />
-                    {errors.answerKeyImages}
-                  </div>
-                )}
               </div>
 
               {/* Human Grades */}
@@ -485,8 +339,8 @@ export const NewAssessment: React.FC = () => {
                 )}
               </div>
 
-              {/* Iterations */}
-              <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6">
+              {/* Testing Iterations */}
+              <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-6">
                 <NumberInput
                   label="Testing Iterations"
                   value={formData.iterations}
@@ -500,6 +354,314 @@ export const NewAssessment: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Template Selection */}
+          <div className="mt-8 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-blue-600" />
+              Prompt Templates
+            </h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Select which prompt templates to use for rubric analysis and assessment grading.
+            </p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Rubric Template */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Rubric Template
+                </label>
+                <select
+                  value={selectedRubricTemplate}
+                  onChange={(e) => setSelectedRubricTemplate(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 px-3 py-2 text-sm bg-white"
+                >
+                  {rubricTemplates.map(template => (
+                    <option key={template.name} value={template.name}>
+                      {template.display_name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500 mt-1">
+                  Template for analyzing grading rubric images
+                </p>
+              </div>
+
+              {/* Assessment Template */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Assessment Template
+                </label>
+                <select
+                  value={selectedAssessmentTemplate}
+                  onChange={(e) => setSelectedAssessmentTemplate(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 px-3 py-2 text-sm bg-white"
+                >
+                  {assessmentTemplates.map(template => (
+                    <option key={template.name} value={template.name}>
+                      {template.display_name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500 mt-1">
+                  Template for grading student assessments
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Model Selectors - Side by Side at Same Level */}
+          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Rubric Model Selector */}
+            <div ref={rubricContainerRef} className="relative bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6">
+              <label className="block text-sm font-semibold text-slate-700 mb-3">
+                Select Grading Rubric Models
+              </label>
+              <p className="text-xs text-slate-500 mb-3">
+                These models will analyze the grading rubric images first
+              </p>
+              {modelsLoading ? (
+                <div className="flex items-center text-slate-600">
+                  <Upload className="w-4 h-4 mr-2 animate-spin" />
+                  Loading models...
+                </div>
+              ) : modelsError ? (
+                <div className="p-3 border border-red-200 rounded-lg bg-red-50">
+                  <div className="flex items-center text-sm text-red-700">
+                    <AlertCircle className="w-4 h-4 mr-1" />
+                    {modelsError}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={refetchModels}
+                    className="mt-2 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <MultiSelect
+                  label=""
+                  options={imageModels}
+                  selectedValues={rubricModels}
+                  onChange={setRubricModels}
+                  placeholder="Choose rubric analysis models..."
+                  dropdownPlacement="top"
+                  renderOptionMeta={renderOptionMeta}
+                  allowDuplicates
+                  maxPerOption={4}
+                  shouldShowChipMenuAt={(id, _index) => !!modelInfoById?.[id]?.supportsReasoning}
+                  getChipBadgeAt={(_id, index) => {
+                    const conf = rubricReasoningBySelection[index];
+                    if (!conf || conf.level === 'none') return (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/70 text-slate-600 border">None</span>
+                    );
+                    return (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 border border-purple-300">{conf.level.charAt(0).toUpperCase() + conf.level.slice(1)}</span>
+                    );
+                  }}
+                  onChipMenuRequestAt={(id, index, rect) => {
+                    const containerRect = rubricContainerRef.current?.getBoundingClientRect();
+                    const left = containerRect ? (rect.right - containerRect.left + 6) : (rect.right + 6);
+                    const top = containerRect ? (rect.top - containerRect.top + rect.height / 2) : (rect.top + rect.height / 2);
+                    setChipMenu({ index, id, anchor: { left, top }, type: 'rubric' });
+                  }}
+                />
+              )}
+              {/* Reasoning Configuration Popover for Rubric Models */}
+              {chipMenu.index !== null && chipMenu.anchor && chipMenu.type === 'rubric' && (
+                <div
+                  ref={popoverRef}
+                  className="absolute z-50 bg-white border rounded-lg shadow-lg p-2 w-56 transform -translate-y-1/2"
+                  style={{ left: chipMenu.anchor.left, top: chipMenu.anchor.top }}
+                >
+                  {(() => {
+                    const idx = chipMenu.index as number;
+                    const id = rubricModels[idx];
+                    const info = modelInfoById?.[id];
+                    const supportsReasoning = info?.supportsReasoning ?? false;
+                    const conf = rubricReasoningBySelection[idx] || { level: 'none' as ReasoningLevel };
+                    const options: ReasoningLevel[] = !supportsReasoning
+                      ? ['none']
+                      : ['none', 'low', 'medium', 'high'];
+                    const currentLevel: ReasoningLevel = (options.includes(conf.level) ? conf.level : 'none');
+                    
+                    return (
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold text-slate-600 px-2 pb-1 border-b">
+                          Rubric Model Reasoning
+                        </div>
+                        {supportsReasoning ? (
+                          <div className="flex flex-col gap-1">
+                            {options.filter(opt => opt !== 'custom').map(opt => (
+                              <button
+                                key={opt}
+                                type="button"
+                                className={`w-full text-left px-2 py-1 rounded text-sm hover:bg-slate-50 ${currentLevel === opt ? 'bg-slate-100' : ''}`}
+                                onClick={() => {
+                                  setRubricReasoningBySelection(prev => {
+                                    const next = [...prev];
+                                    next[idx] = { level: opt };
+                                    return next;
+                                  });
+                                  setChipMenu({ index: null, id: null, anchor: null, type: null });
+                                }}
+                              >
+                                {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-500 px-2 py-1">Reasoning not supported</div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* Assessment Model Selector */}
+            <div ref={assessmentContainerRef} className="relative bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6">
+              <label className="block text-sm font-semibold text-slate-700 mb-3">
+                Select Assessment Models
+              </label>
+              <p className="text-xs text-slate-500 mb-3">
+                These models will grade using the rubric from paired models (left side)
+              </p>
+              {modelsLoading ? (
+                <div className="flex items-center text-slate-600">
+                  <Upload className="w-4 h-4 mr-2 animate-spin" />
+                  Loading models...
+                </div>
+              ) : modelsError ? (
+                <div className="p-3 border border-red-200 rounded-lg bg-red-50">
+                  <div className="flex items-center text-sm text-red-700">
+                    <AlertCircle className="w-4 h-4 mr-1" />
+                    {modelsError}
+                  </div>
+                </div>
+              ) : (
+                <MultiSelect
+                  label=""
+                  options={imageModels}
+                  selectedValues={assessmentModels}
+                  onChange={setAssessmentModels}
+                  placeholder="Choose assessment models..."
+                  dropdownPlacement="top"
+                  renderOptionMeta={renderOptionMeta}
+                  allowDuplicates
+                  maxPerOption={4}
+                  shouldShowChipMenuAt={(id, _index) => !!modelInfoById?.[id]?.supportsReasoning}
+                  getChipBadgeAt={(_id, index) => {
+                    const conf = assessmentReasoningBySelection[index];
+                    if (!conf || conf.level === 'none') return (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/70 text-slate-600 border">None</span>
+                    );
+                    return (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-300">{conf.level.charAt(0).toUpperCase() + conf.level.slice(1)}</span>
+                    );
+                  }}
+                  onChipMenuRequestAt={(id, index, rect) => {
+                    const containerRect = assessmentContainerRef.current?.getBoundingClientRect();
+                    const left = containerRect ? (rect.right - containerRect.left + 6) : (rect.right + 6);
+                    const top = containerRect ? (rect.top - containerRect.top + rect.height / 2) : (rect.top + rect.height / 2);
+                    setChipMenu({ index, id, anchor: { left, top }, type: 'assessment' });
+                  }}
+                />
+              )}
+              {/* Reasoning Configuration Popover for Assessment Models */}
+              {chipMenu.index !== null && chipMenu.anchor && chipMenu.type === 'assessment' && (
+                <div
+                  ref={popoverRef}
+                  className="absolute z-50 bg-white border rounded-lg shadow-lg p-2 w-56 transform -translate-y-1/2"
+                  style={{ left: chipMenu.anchor.left, top: chipMenu.anchor.top }}
+                >
+                  {(() => {
+                    const idx = chipMenu.index as number;
+                    const id = assessmentModels[idx];
+                    const info = modelInfoById?.[id];
+                    const supportsReasoning = info?.supportsReasoning ?? false;
+                    const conf = assessmentReasoningBySelection[idx] || { level: 'none' as ReasoningLevel };
+                    const options: ReasoningLevel[] = !supportsReasoning
+                      ? ['none']
+                      : ['none', 'low', 'medium', 'high'];
+                    const currentLevel: ReasoningLevel = (options.includes(conf.level) ? conf.level : 'none');
+                    
+                    return (
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold text-slate-600 px-2 pb-1 border-b">
+                          Assessment Model Reasoning
+                        </div>
+                        {supportsReasoning ? (
+                          <div className="flex flex-col gap-1">
+                            {options.filter(opt => opt !== 'custom').map(opt => (
+                              <button
+                                key={opt}
+                                type="button"
+                                className={`w-full text-left px-2 py-1 rounded text-sm hover:bg-slate-50 ${currentLevel === opt ? 'bg-slate-100' : ''}`}
+                                onClick={() => {
+                                  setAssessmentReasoningBySelection(prev => {
+                                    const next = [...prev];
+                                    next[idx] = { level: opt };
+                                    return next;
+                                  });
+                                  setChipMenu({ index: null, id: null, anchor: null, type: null });
+                                }}
+                              >
+                                {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-500 px-2 py-1">Reasoning not supported</div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Model Pairs Preview - Full Width */}
+          {modelPairs.length > 0 && modelPairs.some(p => p.rubricModel && p.assessmentModel) && (
+            <div className="mt-8 p-6 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-300 shadow-md">
+              <h4 className="text-base font-bold text-slate-800 mb-4 flex items-center">
+                <Link2 className="w-5 h-5 mr-2 text-blue-600" />
+                Model Pairs Configured
+              </h4>
+              <div className="space-y-3">
+                {modelPairs.map((pair, idx) => {
+                  if (!pair.rubricModel || !pair.assessmentModel) return null;
+                  const rubricModel = models.find(m => m.id === pair.rubricModel);
+                  const assessmentModel = models.find(m => m.id === pair.assessmentModel);
+                  return (
+                    <div key={idx} className="flex items-center gap-3 p-4 bg-white rounded-lg border border-blue-200 shadow-sm">
+                      <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-purple-200 to-blue-200 border-2 border-blue-400 font-bold text-slate-700">
+                        {idx + 1}
+                      </span>
+                      <div className="flex items-center gap-3 flex-1">
+                        <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-md font-semibold text-sm border border-purple-300">
+                          {rubricModel?.name || pair.rubricModel}
+                        </span>
+                        <ArrowRight className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                        <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-md font-semibold text-sm border border-blue-300">
+                          {assessmentModel?.name || pair.assessmentModel}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {errors.modelPairs && (
+            <div className="mt-4 flex items-center text-sm text-red-600">
+              <AlertCircle className="w-4 h-4 mr-1" />
+              {errors.modelPairs}
+            </div>
+          )}
 
           {/* Submit Button */}
           <div className="mt-10 flex justify-center">

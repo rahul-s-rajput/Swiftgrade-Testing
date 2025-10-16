@@ -2,7 +2,7 @@ from typing import Dict, List, Any
 
 from fastapi import APIRouter, HTTPException, status
 
-from ..schemas import ResultsRes, ResultItem, ResultsErrorsRes, TokenUsageItem
+from ..schemas import ResultsRes, ResultItem, ResultsErrorsRes, TokenUsageItem, RubricResultsRes, RubricResultItem
 from ..supabase_client import supabase
 
 
@@ -151,3 +151,46 @@ def get_result_errors(session_id: str) -> ResultsErrorsRes:
             errors_by_model_try[model][try_index].append({"reason": str(verr)})
 
     return ResultsErrorsRes(session_id=session_id, errors_by_model_try=errors_by_model_try)
+
+
+@router.get("/results/{session_id}/rubric", response_model=RubricResultsRes)
+def get_rubric_results(session_id: str) -> RubricResultsRes:
+    """Get rubric analysis results for a session.
+    
+    Returns rubric responses organized by model and try index.
+    This endpoint is used to display rubric analysis in the UI.
+    """
+    # Validate session exists
+    s = supabase.table("session").select("id").eq("id", session_id).execute()
+    if not s.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session_id not found")
+    
+    # Read rubric results for this session
+    res = (
+        supabase.table("rubric_result")
+        .select("model_name,try_index,rubric_response,validation_errors")
+        .eq("session_id", session_id)
+        .order("model_name")
+        .order("try_index")
+        .execute()
+    )
+    
+    rubric_results: Dict[str, Dict[str, RubricResultItem]] = {}
+    
+    for row in res.data or []:
+        model = row.get("model_name")
+        try_index = int(row.get("try_index")) if row.get("try_index") is not None else 1
+        try_index_str = str(try_index)
+        
+        item = RubricResultItem(
+            try_index=try_index,
+            rubric_response=row.get("rubric_response"),
+            validation_errors=row.get("validation_errors")
+        )
+        
+        if model not in rubric_results:
+            rubric_results[model] = {}
+        
+        rubric_results[model][try_index_str] = item
+    
+    return RubricResultsRes(session_id=session_id, rubric_results=rubric_results)

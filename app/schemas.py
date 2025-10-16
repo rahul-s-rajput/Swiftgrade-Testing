@@ -15,11 +15,13 @@ class SessionListItem(BaseModel):
     name: Optional[str] = None
     selected_models: Optional[List[str]] = None
     default_tries: Optional[int] = None
+    rubric_models: Optional[List[str]] = None      # NEW: Rubric models for model pairs
+    assessment_models: Optional[List[str]] = None  # NEW: Assessment models for model pairs
 
 
 class ImageRegisterReq(BaseModel):
     session_id: str
-    role: str = Field(..., pattern=r"^(student|answer_key)$")
+    role: str = Field(..., pattern=r"^(student|answer_key|grading_rubric)$")
     url: str
     order_index: int = Field(..., ge=0)
 
@@ -81,9 +83,21 @@ class GradeModelSpec(BaseModel):
     instance_id: Optional[str] = None  # Optional identifier for same model with different reasoning
 
 
+# --- Grading Rubric: Model Pairs ---
+
+class ModelPairSpec(BaseModel):
+    """Specification for a rubric model + assessment model pair"""
+    rubric_model: GradeModelSpec
+    assessment_model: GradeModelSpec
+    instance_id: Optional[str] = None  # Unique identifier for this pair
+
+
 class GradeSingleReq(BaseModel):
     session_id: str
-    models: List[GradeModelSpec]
+    # New: Model pairs for rubric-based grading
+    model_pairs: Optional[List[ModelPairSpec]] = None
+    # Legacy: Single models (kept for backward compatibility)
+    models: Optional[List[GradeModelSpec]] = None
     default_tries: Optional[int] = 1
     reasoning: Optional[Dict[str, Any]] = None  # pass-through to OpenRouter for models that support it
 
@@ -156,3 +170,31 @@ class PromptSettingsReq(BaseModel):
     system_template: str
     user_template: str
     schema_template: str  # JSON response schema template
+
+
+# --- Rubric Prompt Settings API ---
+class RubricPromptSettingsRes(BaseModel):
+    """Response schema for grading rubric prompt templates"""
+    system_template: str
+    user_template: str
+
+
+class RubricPromptSettingsReq(BaseModel):
+    """Request schema for updating grading rubric prompt templates"""
+    system_template: str
+    user_template: str
+
+
+# --- Rubric Results API ---
+class RubricResultItem(BaseModel):
+    """Single rubric result for a specific try"""
+    try_index: int
+    rubric_response: str | None = None
+    validation_errors: Dict[str, Any] | None = None
+
+
+class RubricResultsRes(BaseModel):
+    """Response schema for rubric results"""
+    session_id: str
+    # rubric_results[model_name][try_index] = RubricResultItem
+    rubric_results: Dict[str, Dict[str, RubricResultItem]]

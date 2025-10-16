@@ -18,7 +18,7 @@ interface MultiSelectProps {
   onChipMenuRequestAt?: (id: string, index: number, anchorRect: DOMRect) => void;
   shouldShowChipMenuAt?: (id: string, index: number) => boolean;
   maxPerOption?: number;
-  dropdownPlacement?: 'right' | 'bottom';
+  dropdownPlacement?: 'right' | 'bottom' | 'top';
 }
 
 export const MultiSelect: React.FC<MultiSelectProps> = ({
@@ -61,26 +61,12 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Compute available vertical space to prevent dropdown cutoff
+  // Set fixed max height for dropdown
   useEffect(() => {
     if (!isOpen) return;
-    const computeMaxHeight = () => {
-      const rect = triggerRef.current?.getBoundingClientRect();
-      const padding = 32; // give extra breathing room from the bottom
-      const viewportH = window.innerHeight || document.documentElement.clientHeight;
-      const top = rect ? rect.top : 0;
-      const availableBelow = Math.max(0, viewportH - top - padding);
-      const capped = Math.min(Math.round(viewportH * 0.6), availableBelow);
-      setMenuMaxHeight(capped);
-    };
-    computeMaxHeight();
-    window.addEventListener('resize', computeMaxHeight);
-    window.addEventListener('scroll', computeMaxHeight, true);
-    return () => {
-      window.removeEventListener('resize', computeMaxHeight);
-      window.removeEventListener('scroll', computeMaxHeight, true);
-    };
-  }, [isOpen, dropdownPlacement]);
+    // Fixed height of 400px for consistent dropdown size
+    setMenuMaxHeight(400);
+  }, [isOpen]);
 
   const toggleOption = (optionId: string) => {
     if (allowDuplicates) {
@@ -133,9 +119,13 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
           {/* Dropdown menu */}
           {isOpen && (
             <div
-              className={dropdownPlacement === 'right'
-                ? "absolute z-50 w-96 left-full top-0 ml-2 bg-white border border-gray-300 rounded-lg shadow-lg overflow-hidden"
-                : "absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg overflow-hidden"}
+              className={
+                dropdownPlacement === 'right'
+                  ? "absolute z-50 w-96 left-full top-0 ml-2 bg-white border border-gray-300 rounded-lg shadow-lg overflow-hidden"
+                  : dropdownPlacement === 'top'
+                  ? "absolute z-50 w-full bottom-full mb-1 bg-white border border-gray-300 rounded-lg shadow-lg overflow-hidden"
+                  : "absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg overflow-hidden"
+              }
               style={{ maxHeight: menuMaxHeight }}
             >
             {/* Search input */}

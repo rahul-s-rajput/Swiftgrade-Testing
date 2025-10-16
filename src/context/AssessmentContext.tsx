@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { Assessment, AssessmentResults, ReasoningConfig } from '../types';
+import { Assessment, AssessmentResults, ReasoningConfig, ModelPair } from '../types';
 import {
   createSession,
   getSignedUrl,
@@ -84,6 +84,7 @@ function convertReasoningToOpenRouterFormat(
 export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [autoInferenceTriggered, setAutoInferenceTriggered] = useState(false);
 
   // Load existing sessions from backend on mount
   useEffect(() => {
@@ -93,22 +94,43 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       for (let i = 0; i < tries; i++) {
         try {
           const sessions = await getSessions();
-          const mapped: Assessment[] = (sessions || []).map(s => ({
-            id: s.id,
-            name: (s.name && s.name.trim()) ? s.name : `Assessment ${String(s.id).slice(0, 8)}`,
-            date: (String(s.created_at || '').split('T')[0]) || new Date().toISOString().split('T')[0],
-            status: (s.status === 'graded') ? 'complete' : (s.status === 'failed' ? 'failed' : 'running'),
-            studentImages: [],
-            answerKeyImages: [],
-            questions: '[]',
-            humanGrades: '{}',
-            selectedModels: (s.selected_models || []),
-            iterations: (typeof s.default_tries === 'number' && s.default_tries > 0 ? s.default_tries : 1),
-          }));
+          console.log('[Initial Load] Sample session data:', sessions?.[0]);
+          const mapped: Assessment[] = (sessions || []).map(s => {
+            // Construct modelPairs from rubric_models and assessment_models arrays
+            let modelPairs: ModelPair[] | undefined;
+            console.log('[Initial Load] Session', s.id, 'has rubric_models:', s.rubric_models, 'assessment_models:', s.assessment_models);
+            if (s.rubric_models && s.assessment_models && s.rubric_models.length > 0) {
+              modelPairs = s.rubric_models.map((rubricModel, index) => ({
+                rubricModel: rubricModel,
+                assessmentModel: s.assessment_models![index] || rubricModel, // Fallback to rubricModel if mismatch
+              }));
+              console.log('[Initial Load] Constructed modelPairs from backend for', s.id, ':', modelPairs.length, 'pairs');
+            }
+            
+            return {
+              id: s.id,
+              name: (s.name && s.name.trim()) ? s.name : `Assessment ${String(s.id).slice(0, 8)}`,
+              date: (String(s.created_at || '').split('T')[0]) || new Date().toISOString().split('T')[0],
+              status: (s.status === 'graded') ? 'complete' : (s.status === 'failed' ? 'failed' : 'running'),
+              studentImages: [],
+              answerKeyImages: [],
+              rubricImages: [],  // NEW
+              questions: '[]',
+              humanGrades: '{}',
+              selectedModels: (s.selected_models || []),
+              iterations: (typeof s.default_tries === 'number' && s.default_tries > 0 ? s.default_tries : 1),
+              modelPairs: modelPairs,  // Constructed from backend data
+            };
+          });
           if (!cancelled) {
             setAssessments(prev => mapped.map(m => {
               const existing = prev.find(p => p.id === m.id);
-              return existing ? { ...m, results: existing.results } : m;
+              return existing ? { 
+                ...m, 
+                results: existing.results,
+                modelPairs: existing.modelPairs,  // Preserve modelPairs from local state
+                reasoningBySelection: existing.reasoningBySelection  // Preserve reasoning config
+              } : m;
             }));
             setLoading(false);
           }
@@ -129,24 +151,61 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Expose a manual refresh that reuses the same logic
   const refreshSessions = useCallback(async () => {
     try {
+      console.log('[refreshSessions] Starting refresh...');
       const sessions = await getSessions();
-      const mapped: Assessment[] = (sessions || []).map(s => ({
-        id: s.id,
-        name: (s.name && s.name.trim()) ? s.name : `Assessment ${String(s.id).slice(0, 8)}`,
-        date: (String(s.created_at || '').split('T')[0]) || new Date().toISOString().split('T')[0],
-        status: (s.status === 'graded') ? 'complete' : (s.status === 'failed' ? 'failed' : 'running'),
-        studentImages: [],
-        answerKeyImages: [],
-        questions: '[]',
-        humanGrades: '{}',
-        selectedModels: (s.selected_models || []),
-        iterations: (typeof s.default_tries === 'number' && s.default_tries > 0 ? s.default_tries : 1),
-      }));
-      // Preserve existing results and client-only fields when possible
-      setAssessments(prev => mapped.map(m => {
-        const existing = prev.find(p => p.id === m.id);
-        return existing ? { ...m, results: existing.results } : m;
-      }));
+      console.log('[refreshSessions] Fetched', sessions?.length, 'sessions from backend');
+      
+      const mapped: Assessment[] = (sessions || []).map(s => {
+        // Construct modelPairs from rubric_models and assessment_models arrays
+        let modelPairs: ModelPair[] | undefined;
+        if (s.rubric_models && s.assessment_models && s.rubric_models.length > 0) {
+          modelPairs = s.rubric_models.map((rubricModel, index) => ({
+            rubricModel: rubricModel,
+            assessmentModel: s.assessment_models![index] || rubricModel, // Fallback to rubricModel if mismatch
+          }));
+          console.log('[refreshSessions] Constructed modelPairs from backend for', s.id, ':', modelPairs.length, 'pairs');
+        }
+        
+        return {
+          id: s.id,
+          name: (s.name && s.name.trim()) ? s.name : `Assessment ${String(s.id).slice(0, 8)}`,
+          date: (String(s.created_at || '').split('T')[0]) || new Date().toISOString().split('T')[0],
+          status: (s.status === 'graded') ? 'complete' : (s.status === 'failed' ? 'failed' : 'running'),
+          studentImages: [],
+          answerKeyImages: [],
+          rubricImages: [],  // NEW
+          questions: '[]',
+          humanGrades: '{}',
+          selectedModels: (s.selected_models || []),
+          iterations: (typeof s.default_tries === 'number' && s.default_tries > 0 ? s.default_tries : 1),
+          modelPairs: modelPairs,  // Constructed from backend data
+        };
+      });
+      
+      // Preserve existing results, modelPairs, and client-only fields when possible
+      setAssessments(prev => {
+        console.log('[refreshSessions] Previous assessments count:', prev.length);
+        const updated = mapped.map(m => {
+          const existing = prev.find(p => p.id === m.id);
+          if (existing) {
+            console.log('[refreshSessions] Preserving data for', m.id, {
+              hasModelPairs: !!existing.modelPairs,
+              modelPairsCount: existing.modelPairs?.length,
+              hasResults: !!existing.results
+            });
+          } else {
+            console.log('[refreshSessions] New session from backend:', m.id);
+          }
+          return existing ? { 
+            ...m, 
+            results: existing.results,
+            modelPairs: existing.modelPairs,  // Preserve modelPairs from local state
+            reasoningBySelection: existing.reasoningBySelection  // Preserve reasoning config
+          } : m;
+        });
+        console.log('[refreshSessions] Updated assessments count:', updated.length);
+        return updated;
+      });
     } catch (e) {
       console.error('Failed to refresh sessions:', e);
     }
@@ -322,8 +381,22 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           return Math.round((nums.reduce((s, x) => s + x, 0) / nums.length) * 100) / 100;
         };
 
+        // Parse model pair identifier if present (format: pair_0_rubricModel_assessmentModel)
+        // Use regex to match the pattern: pair_N_model1_model2 where models contain '/'
+        let rubricModel: string | undefined;
+        let assessmentModel: string | undefined;
+        // Match pattern: pair_<number>_<model1>_<model2> where models are like "provider/model-name"
+        // We look for the pattern where we have text with '/', then '_', then text with '/'
+        const pairMatch = model.match(/^pair_\d+_(.+\/.+?)_(.+\/.+)$/);
+        if (pairMatch) {
+          rubricModel = pairMatch[1];
+          assessmentModel = pairMatch[2];
+        }
+
         return {
           model,
+          rubricModel,
+          assessmentModel,
           averages: {
             discrepancies100: avg('discrepancies100'),
             questionDiscrepancies100: avg('questionDiscrepancies100'),
@@ -340,11 +413,66 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const totalMaxMarks = (statsRes as any)?.totals?.total_max_marks ?? 0;
       const humanGrades = statsRes.human_marks_by_qid || {};
       const mapped: AssessmentResults = { modelResults, questions, totalMaxMarks, humanGrades };
-      setAssessments(prev => prev.map(a => (a.id === sessionId ? { ...a, results: mapped } : a)));
+      
+      // Infer modelPairs from results if they exist (for assessments loaded from backend)
+      const inferredModelPairs: ModelPair[] = [];
+      for (const mr of modelResults) {
+        if (mr.rubricModel && mr.assessmentModel) {
+          // Check if this pair already exists
+          const exists = inferredModelPairs.some(
+            p => p.rubricModel === mr.rubricModel && p.assessmentModel === mr.assessmentModel
+          );
+          if (!exists) {
+            inferredModelPairs.push({
+              rubricModel: mr.rubricModel,
+              assessmentModel: mr.assessmentModel,
+            });
+          }
+        }
+      }
+      
+      setAssessments(prev => prev.map(a => {
+        if (a.id === sessionId) {
+          return {
+            ...a,
+            results: mapped,
+            // Set modelPairs if we inferred them and assessment doesn't already have them
+            modelPairs: a.modelPairs || (inferredModelPairs.length > 0 ? inferredModelPairs : undefined)
+          };
+        }
+        return a;
+      }));
     } catch (e) {
       console.error('Failed to load assessment results:', e);
     }
   }, []);
+
+  // Auto-load results for completed assessments that don't have modelPairs yet
+  // This runs once after initial load to infer modelPairs from results
+  useEffect(() => {
+    if (loading || autoInferenceTriggered) return; // Wait for initial load and run only once
+    
+    const assessmentsNeedingInference = assessments.filter(
+      a => a.status === 'complete' && !a.modelPairs && a.selectedModels.length === 0 && !a.results
+    );
+    
+    if (assessmentsNeedingInference.length > 0) {
+      setAutoInferenceTriggered(true); // Mark as triggered to prevent re-runs
+      console.log('[Auto-Inference] Found', assessmentsNeedingInference.length, 'completed assessments without modelPairs');
+      
+      // Load results for these assessments (which will trigger modelPairs inference)
+      (async () => {
+        for (const assessment of assessmentsNeedingInference) {
+          try {
+            console.log('[Auto-Inference] Loading results for', assessment.id);
+            await loadAssessmentResults(assessment.id);
+          } catch (e) {
+            console.error('[Auto-Inference] Failed to load results for', assessment.id, e);
+          }
+        }
+      })();
+    }
+  }, [loading, assessments, loadAssessmentResults, autoInferenceTriggered]);
 
   const addAssessment = useCallback(async (assessmentData: Omit<Assessment, 'id' | 'date'>) => {
     // 1) Create backend session
@@ -358,6 +486,13 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       date: new Date().toISOString().split('T')[0],
       status: 'running',
     };
+    console.log('[AssessmentContext] Creating local assessment:', {
+      hasModelPairs: !!localAssessment.modelPairs,
+      modelPairsLength: localAssessment.modelPairs?.length,
+      selectedModelsLength: localAssessment.selectedModels.length,
+      modelPairs: localAssessment.modelPairs
+    });
+    
     setAssessments(prev => [...prev, localAssessment]);
 
     // Helper to update status/results in state
@@ -372,7 +507,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     (async () => {
       try {
         // Upload and register images
-        const uploadAndRegister = async (files: File[], role: 'student' | 'answer_key') => {
+        const uploadAndRegister = async (files: File[], role: 'student' | 'answer_key' | 'grading_rubric') => {
           for (let i = 0; i < files.length; i++) {
             const f = files[i];
             const signed = await getSignedUrl(f.name, f.type || 'application/octet-stream');
@@ -385,6 +520,12 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
         await uploadAndRegister(assessmentData.studentImages, 'student');
         await uploadAndRegister(assessmentData.answerKeyImages, 'answer_key');
+        
+        // NEW: Upload rubric images if provided
+        if (assessmentData.rubricImages && assessmentData.rubricImages.length > 0) {
+          console.log('[AssessmentContext] Uploading', assessmentData.rubricImages.length, 'rubric images');
+          await uploadAndRegister(assessmentData.rubricImages, 'grading_rubric');
+        }
 
         // Parse and post questions config + human marks
         let questionsPayload: QuestionConfigQuestion[];
@@ -399,7 +540,68 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
         await postQuestionsConfig(sessionId, questionsPayload, humanMarks);
 
-        // Handle reasoning configuration for each model instance
+        // NEW: Determine which flow to use (model pairs vs legacy single models)
+        const useModelPairs = assessmentData.modelPairs && assessmentData.modelPairs.length > 0;
+        
+        if (useModelPairs) {
+          // NEW FLOW: Model pairs with rubric
+          console.log('[AssessmentContext] Using model pairs flow:', assessmentData.modelPairs!.length, 'pairs');
+          
+          // Build model pair specs for backend
+          const modelPairSpecs = assessmentData.modelPairs!.map((pair, index) => {
+            // Rubric model reasoning
+            const rubricReasoning = pair.rubricReasoning;
+            let rubricReasoningConfig: any = undefined;
+            if (rubricReasoning) {
+              if (rubricReasoning.level === 'none') {
+                rubricReasoningConfig = { exclude: true };
+              } else if (rubricReasoning.level !== 'custom') {
+                rubricReasoningConfig = { effort: rubricReasoning.level };
+              }
+            }
+            
+            // Assessment model reasoning
+            const assessmentReasoning = pair.assessmentReasoning;
+            let assessmentReasoningConfig: any = undefined;
+            if (assessmentReasoning) {
+              if (assessmentReasoning.level === 'none') {
+                assessmentReasoningConfig = { exclude: true };
+              } else if (assessmentReasoning.level !== 'custom') {
+                assessmentReasoningConfig = { effort: assessmentReasoning.level };
+              }
+            }
+            
+            return {
+              rubric_model: {
+                name: pair.rubricModel,
+                tries: assessmentData.iterations,
+                reasoning: rubricReasoningConfig
+              },
+              assessment_model: {
+                name: pair.assessmentModel,
+                tries: assessmentData.iterations,
+                reasoning: assessmentReasoningConfig
+              },
+              instance_id: `pair_${index}_${pair.rubricModel}_${pair.assessmentModel}`
+            };
+          });
+          
+          console.log('🔗 [AssessmentContext] Model pair specs:', modelPairSpecs);
+          
+          // Start grading with model pairs
+          await gradeSingleWithRetry(
+            sessionId,
+            [],  // Empty models array for pairs
+            assessmentData.iterations,
+            undefined,  // No global reasoning
+            undefined,  // No reasoningBySelection
+            5,
+            modelPairSpecs  // NEW: Pass model pairs
+          );
+        } else {
+          // LEGACY FLOW: Single models (backward compatibility)
+          console.log('[AssessmentContext] Using legacy single models flow:', assessmentData.selectedModels.length, 'models');
+          // Handle reasoning configuration for each model instance
         // When using same model with different reasoning, we need separate calls
         const modelInstances: Array<{model: string, reasoning?: any}> = [];
         
@@ -440,6 +642,8 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           firstReasoning,  // Keep for backward compatibility
           assessmentData.reasoningBySelection  // Pass per-model reasoning configs
         );
+        }
+        // End of model pairs vs legacy conditional
 
         // Fetch results and stats (retry a few times for eventual consistency)
         const fetchWithRetry = async <T,>(fn: () => Promise<T>, tries = 5): Promise<T> => {
@@ -579,8 +783,22 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
             return Math.round((nums.reduce((s, x) => s + x, 0) / nums.length) * 100) / 100;
           };
 
+          // Parse model pair identifier if present (format: pair_0_rubricModel_assessmentModel)
+          // Use regex to match the pattern: pair_N_model1_model2 where models contain '/'
+          let rubricModel: string | undefined;
+          let assessmentModel: string | undefined;
+          // Match pattern: pair_<number>_<model1>_<model2> where models are like "provider/model-name"
+          // We look for the pattern where we have text with '/', then '_', then text with '/'
+          const pairMatch = model.match(/^pair_\d+_(.+\/.+?)_(.+\/.+)$/);
+          if (pairMatch) {
+            rubricModel = pairMatch[1];
+            assessmentModel = pairMatch[2];
+          }
+
           return {
             model,
+            rubricModel,
+            assessmentModel,
             averages: {
               discrepancies100: avg('discrepancies100'),
               questionDiscrepancies100: avg('questionDiscrepancies100'),

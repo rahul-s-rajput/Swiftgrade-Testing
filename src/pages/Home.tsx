@@ -149,8 +149,25 @@ export const Home: React.FC = () => {
                     <div className="space-y-2">
                       <div className="flex items-center text-sm">
                         <Cpu className="w-4 h-4 mr-2 text-slate-500" />
-                        <span className="text-slate-700 font-medium">{assessment.selectedModels.length}</span>
-                        <span className="text-slate-600 ml-1">model{assessment.selectedModels.length !== 1 ? 's' : ''}</span>
+                        <span className="text-slate-700 font-medium">
+                          {(() => {
+                            console.log('[Home] Assessment model data:', {
+                              id: assessment.id,
+                              hasModelPairs: !!assessment.modelPairs,
+                              modelPairsLength: assessment.modelPairs?.length,
+                              selectedModelsLength: assessment.selectedModels.length,
+                              modelPairs: assessment.modelPairs
+                            });
+                            return assessment.modelPairs && assessment.modelPairs.length > 0 
+                              ? assessment.modelPairs.length 
+                              : assessment.selectedModels.length;
+                          })()}
+                        </span>
+                        <span className="text-slate-600 ml-1">
+                          {assessment.modelPairs && assessment.modelPairs.length > 0 
+                            ? `model pair${assessment.modelPairs.length !== 1 ? 's' : ''}`
+                            : `model${assessment.selectedModels.length !== 1 ? 's' : ''}`}
+                        </span>
                       </div>
                       <div className="flex items-center text-sm">
                         <RotateCcw className="w-4 h-4 mr-2 text-slate-500" />
