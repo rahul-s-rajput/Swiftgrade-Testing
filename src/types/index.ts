@@ -1,8 +1,15 @@
 export type ReasoningLevel = 'none' | 'low' | 'medium' | 'high' | 'custom';
 
 export interface ReasoningConfig {
-  level: ReasoningLevel;
+  level: ReasoningLevel;  // Used in frontend UI
   tokens?: number;
+}
+
+// Backend storage format (after conversion)
+export interface StoredReasoningConfig {
+  effort?: 'low' | 'medium' | 'high';  // OpenRouter effort-based reasoning
+  exclude?: boolean;  // true when level='none' (no reasoning)
+  tokens?: number;  // For custom reasoning
 }
 
 // --- Grading Rubric Types ---

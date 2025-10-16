@@ -573,13 +573,6 @@ export const Settings: React.FC = () => {
           <div className="text-slate-600">Loading rubric prompt settings…</div>
         ) : (
           <form onSubmit={onSaveRubricPrompt} className="space-y-6">
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
-              <h3 className="text-sm font-semibold text-purple-900 mb-2">About Rubric Prompts</h3>
-              <p className="text-sm text-purple-800">
-                These templates are used by the rubric analysis model to extract grading criteria from rubric images.
-                The rubric output is then passed to the assessment model for grading.
-              </p>
-            </div>
 
             {/* Template Management */}
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">

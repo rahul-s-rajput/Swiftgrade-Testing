@@ -15,8 +15,9 @@ class SessionListItem(BaseModel):
     name: Optional[str] = None
     selected_models: Optional[List[str]] = None
     default_tries: Optional[int] = None
-    rubric_models: Optional[List[str]] = None      # NEW: Rubric models for model pairs
-    assessment_models: Optional[List[str]] = None  # NEW: Assessment models for model pairs
+    rubric_models: Optional[List[str]] = None      # Legacy: Rubric model names
+    assessment_models: Optional[List[str]] = None  # Legacy: Assessment model names
+    model_pairs: Optional[List[Dict[str, Any]]] = None  # NEW: Complete model pair specifications with reasoning
 
 
 class ImageRegisterReq(BaseModel):

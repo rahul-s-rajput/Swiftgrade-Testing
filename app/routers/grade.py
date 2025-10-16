@@ -469,8 +469,9 @@ async def _call_rubric_llm(
         instance_id=instance_id or model
     )
     
-    # Extract rubric text from response
+    # Extract rubric text from response and parse JSON
     rubric_text = ""
+    raw_text = ""  # Define outside try block for proper scoping
     validation_errors = None
     
     try:
@@ -481,19 +482,134 @@ async def _call_rubric_llm(
             msg = choices[0].get("message", {})
             content = msg.get("content")
             
+            # Get raw text
             if isinstance(content, str):
-                rubric_text = content.strip()
+                raw_text = content.strip()
             elif isinstance(content, list):
                 # Concatenate text parts
                 parts = []
                 for c in content:
                     if isinstance(c, dict) and c.get("type") == "text":
                         parts.append(c.get("text", ""))
-                rubric_text = "\n".join(parts).strip()
+                raw_text = "\n".join(parts).strip()
             else:
                 validation_errors = {"reason": "unsupported_content_type"}
+                
+            # Extract JSON from raw text (handles preamble, markdown fences, etc.)
+            if raw_text and not validation_errors:
+                import re
+                
+                text = raw_text
+                
+                # Try to extract content from markdown code block using regex
+                # Pattern: ```json or ``` at start, capture everything until closing ```
+                code_block_pattern = r'```(?:json|JSON)?\s*\n(.*?)```'
+                code_match = re.search(code_block_pattern, text, re.DOTALL)
+                
+                if code_match:
+                    # Found code block, extract the content (which may still have preamble before {)
+                    text = code_match.group(1).strip()
+                    if OPENROUTER_DEBUG:
+                        logging.info("📦 Extracted content from markdown code block (%d chars)", len(text))
+                else:
+                    # No code block found, use raw text as-is
+                    text = text.strip()
+                    if OPENROUTER_DEBUG:
+                        logging.info("📝 No markdown code block found, using raw text (%d chars)", len(text))
+                
+                # Find the first opening brace (skips any remaining preamble text)
+                start = text.find("{")
+                if start == -1:
+                    if OPENROUTER_DEBUG:
+                        logging.warning("⚠️ No JSON object found in rubric LLM response")
+                        logging.warning("Response preview: %s", text[:300])
+                    validation_errors = {"reason": "no_json_in_content", "preview": text[:200]}
+                else:
+                    # Log if there's preamble text before JSON
+                    if start > 0 and OPENROUTER_DEBUG:
+                        preamble = text[:start].strip()
+                        if preamble:
+                            logging.info("📝 Rubric LLM added preamble before JSON: %s", preamble[:100])
+                    
+                    # Use brace matching to find closing brace
+                    brace_count = 0
+                    end = -1
+                    in_string = False
+                    escape_next = False
+                    
+                    for i in range(start, len(text)):
+                        char = text[i]
+                        
+                        if escape_next:
+                            escape_next = False
+                            continue
+                        
+                        if char == '\\':
+                            escape_next = True
+                            continue
+                        
+                        if char == '"' and not escape_next:
+                            in_string = not in_string
+                            continue
+                        
+                        if not in_string:
+                            if char == '{':
+                                brace_count += 1
+                            elif char == '}':
+                                brace_count -= 1
+                                if brace_count == 0:
+                                    end = i
+                                    break
+                    
+                    if end == -1:
+                        if OPENROUTER_DEBUG:
+                            logging.warning("⚠️ Brace matching failed for rubric response")
+                        end = text.rfind("}")
+                        if end == -1 or end <= start:
+                            validation_errors = {"reason": "no_closing_brace", "preview": text[start:start+200]}
+                    
+                    if end != -1 and not validation_errors:
+                        # Extract only the JSON portion
+                        json_str = text[start : end + 1]
+                        
+                        # Validate it's proper JSON
+                        try:
+                            parsed = json.loads(json_str)
+                            rubric_text = json_str  # Store the clean JSON string
+                            
+                            if OPENROUTER_DEBUG:
+                                logging.info("✅ Successfully extracted and validated rubric JSON (%d chars)", len(json_str))
+                                
+                            # Validate structure
+                            if not isinstance(parsed, dict):
+                                validation_errors = {"reason": "rubric_not_dict"}
+                            elif "grading_criteria" not in parsed:
+                                validation_errors = {"reason": "missing_grading_criteria_key"}
+                            elif not isinstance(parsed.get("grading_criteria"), list):
+                                validation_errors = {"reason": "grading_criteria_not_array"}
+                        except json.JSONDecodeError as json_err:
+                            logging.error("❌ Rubric JSON parse error: %s", str(json_err))
+                            logging.error("Attempted to parse: %s", json_str[:500])
+                            validation_errors = {
+                                "reason": "parse_exception",
+                                "error": str(json_err),
+                                "json_preview": json_str[:200]
+                            }
+                            
     except Exception as e:
         validation_errors = {"reason": "parse_exception", "error": str(e)}
+        logging.error("❌ Exception during rubric extraction: %s", str(e))
+        import traceback
+        logging.error("Full traceback: %s", traceback.format_exc())
+    
+    # Log the extraction result
+    if rubric_text:
+        if OPENROUTER_DEBUG:
+            logging.info("✅ Rubric extraction successful, storing %d chars of clean JSON", len(rubric_text))
+    else:
+        logging.warning("⚠️ Rubric extraction failed, validation_errors: %s", validation_errors)
+        if raw_text:
+            logging.warning("Raw text preview (first 500 chars): %s", raw_text[:500])
     
     # Store in rubric_result table
     model_identifier = instance_id if instance_id else model
@@ -878,22 +994,26 @@ def _repair_json_string(text: str) -> str:
     """Attempt basic JSON repair for common LLM output issues.
     
     This function handles:
-    - Markdown code fences (```json)
+    - Markdown code fences (```json) anywhere in text
+    - Preamble text before JSON
     - Extra text after the closing brace
     - Trailing commas
     """
-    text = text.strip()
-    
-    # Remove markdown code fences
-    if text.startswith("```json"):
-        text = text[7:]
-    elif text.startswith("```"):
-        text = text[3:]
-    
-    if text.endswith("```"):
-        text = text[:-3]
+    import re
     
     text = text.strip()
+    
+    # Try to extract content from markdown code block using regex
+    # This handles preamble text before the code block
+    code_block_pattern = r'```(?:json|JSON)?\s*\n(.*?)```'
+    code_match = re.search(code_block_pattern, text, re.DOTALL)
+    
+    if code_match:
+        # Found code block, extract the content
+        text = code_match.group(1).strip()
+    else:
+        # No code block, use text as-is
+        text = text.strip()
     
     # Find the JSON object using brace matching
     start = text.find("{")
@@ -959,23 +1079,39 @@ def _parse_model_output(raw: Dict[str, Any]) -> Tuple[List[Dict[str, Any]] | Non
             return None, {"reason": "unsupported_content_type"}
 
         # Try to locate JSON block with improved parsing
-        text = text.strip()
-        
-        # Remove markdown code fences if present
-        if text.startswith("```json"):
-            text = text[7:]  # Remove ```json
-        elif text.startswith("```"):
-            text = text[3:]  # Remove ```
-        
-        if text.endswith("```"):
-            text = text[:-3]
+        import re
         
         text = text.strip()
         
-        # Find the first opening brace
+        # Try to extract content from markdown code block using regex
+        # This properly handles preamble text BEFORE the code block
+        code_block_pattern = r'```(?:json|JSON)?\s*\n(.*?)```'
+        code_match = re.search(code_block_pattern, text, re.DOTALL)
+        
+        if code_match:
+            # Found code block, extract the content
+            text = code_match.group(1).strip()
+            if OPENROUTER_DEBUG:
+                logging.info("📦 Extracted content from markdown code block (%d chars)", len(text))
+        else:
+            # No code block, use raw text
+            text = text.strip()
+            if OPENROUTER_DEBUG:
+                logging.info("📝 No markdown code block found, using raw text (%d chars)", len(text))
+        
+        # Find the first opening brace (skips any remaining preamble text)
         start = text.find("{")
         if start == -1:
+            if OPENROUTER_DEBUG:
+                logging.warning("⚠️ No JSON object found in LLM response")
+                logging.warning("Response preview: %s", text[:300])
             return None, {"reason": "no_json_in_content", "preview": text[:200]}
+        
+        # Log if there's text before the JSON (common with some models)
+        if start > 0 and OPENROUTER_DEBUG:
+            preamble = text[:start].strip()
+            if preamble:
+                logging.info("📝 LLM added preamble before JSON: %s", preamble[:100])
         
         # Use brace matching to find the MATCHING closing brace
         # This handles nested objects correctly
@@ -1014,21 +1150,52 @@ def _parse_model_output(raw: Dict[str, Any]) -> Tuple[List[Dict[str, Any]] | Non
         
         if end == -1:
             # Fallback to rfind if brace matching fails
+            if OPENROUTER_DEBUG:
+                logging.warning("⚠️ Brace matching failed, using fallback rfind method")
             end = text.rfind("}")
             if end == -1 or end <= start:
-                return None, {"reason": "no_json_in_content", "preview": text[:200]}
+                if OPENROUTER_DEBUG:
+                    logging.error("❌ No closing brace found in LLM response")
+                    logging.error("Text excerpt: %s", text[start:start+200])
+                return None, {"reason": "no_closing_brace", "preview": text[start:start+200]}
         
         # Extract ONLY the JSON portion (nothing after the closing brace)
         json_str = text[start : end + 1]
         
+        if OPENROUTER_DEBUG:
+            logging.info("🔍 Extracted JSON string (%d chars)", len(json_str))
+            if len(json_str) < 500:
+                logging.debug("Full JSON: %s", json_str)
+        
         # Attempt to parse
         try:
             obj = json.loads(json_str)
+            if OPENROUTER_DEBUG:
+                logging.info("✅ Successfully parsed JSON response")
         except json.JSONDecodeError as json_err:
             # If parsing still fails, log the problematic JSON for debugging
-            logging.error("JSON parse error: %s", str(json_err))
+            logging.error("❌ JSON parse error: %s", str(json_err))
+            logging.error("Error at position %s (line %s, col %s)", 
+                         json_err.pos if hasattr(json_err, 'pos') else 'unknown',
+                         json_err.lineno if hasattr(json_err, 'lineno') else 'unknown',
+                         json_err.colno if hasattr(json_err, 'colno') else 'unknown')
             logging.error("Attempted to parse: %s", json_str[:500])
-            return None, {"reason": "parse_exception", "error": str(json_err), "json_preview": json_str[:200]}
+            
+            # Try to identify common issues
+            error_hints = []
+            if "Expecting property name" in str(json_err):
+                error_hints.append("Possible trailing comma or missing quote")
+            if "Expecting value" in str(json_err):
+                error_hints.append("Possible extra comma or missing value")
+            if "Unterminated string" in str(json_err):
+                error_hints.append("String not properly closed")
+            
+            return None, {
+                "reason": "parse_exception", 
+                "error": str(json_err), 
+                "json_preview": json_str[:200],
+                "hints": error_hints if error_hints else None
+            }
         
         # Extract student info if present (for future use/logging)
         student_info = {
@@ -1293,9 +1460,23 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
         if use_model_pairs:
             rubric_models = [pair.rubric_model.name for pair in payload.model_pairs]
             assessment_models = [pair.assessment_model.name for pair in payload.model_pairs]
+            
+            # Serialize complete model pair specifications including reasoning configs
+            model_pairs_data = [
+                {
+                    "rubricModel": pair.rubric_model.name,
+                    "assessmentModel": pair.assessment_model.name,
+                    "rubricReasoning": pair.rubric_model.reasoning if pair.rubric_model.reasoning else None,
+                    "assessmentReasoning": pair.assessment_model.reasoning if pair.assessment_model.reasoning else None,
+                    "instanceId": pair.instance_id if pair.instance_id else None,
+                }
+                for pair in payload.model_pairs
+            ]
+            
             supabase.table("session").update({
                 "rubric_models": rubric_models,
                 "assessment_models": assessment_models,
+                "model_pairs": model_pairs_data,  # NEW: Save complete specifications
                 "default_tries": payload.default_tries or 1,
             }).eq("id", payload.session_id).execute()
         else:

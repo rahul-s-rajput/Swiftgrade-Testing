@@ -341,8 +341,15 @@ export interface SessionListItem {
   name?: string;
   selected_models?: string[];
   default_tries?: number;
-  rubric_models?: string[];      // NEW: Rubric models for model pairs
-  assessment_models?: string[];  // NEW: Assessment models for model pairs
+  rubric_models?: string[];      // Legacy: Rubric model names
+  assessment_models?: string[];  // Legacy: Assessment model names  
+  model_pairs?: Array<{          // NEW: Complete model pair specifications with reasoning
+    rubricModel: string;
+    assessmentModel: string;
+    rubricReasoning?: { level: string; tokens?: number };
+    assessmentReasoning?: { level: string; tokens?: number };
+    instanceId?: string;
+  }>;
 }
 export const getSessions = () => {
   console.log('[API] getSessions called');

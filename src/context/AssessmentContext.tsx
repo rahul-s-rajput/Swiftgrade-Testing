@@ -96,15 +96,26 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           const sessions = await getSessions();
           console.log('[Initial Load] Sample session data:', sessions?.[0]);
           const mapped: Assessment[] = (sessions || []).map(s => {
-            // Construct modelPairs from rubric_models and assessment_models arrays
+            // Use model_pairs from backend (includes reasoning configs)
             let modelPairs: ModelPair[] | undefined;
-            console.log('[Initial Load] Session', s.id, 'has rubric_models:', s.rubric_models, 'assessment_models:', s.assessment_models);
-            if (s.rubric_models && s.assessment_models && s.rubric_models.length > 0) {
+            console.log('[Initial Load] Session', s.id, 'has model_pairs:', s.model_pairs);
+            if (s.model_pairs && s.model_pairs.length > 0) {
+              // NEW: Use complete model_pairs from backend with reasoning
+              modelPairs = s.model_pairs.map((pair: any) => ({
+                rubricModel: pair.rubricModel,
+                assessmentModel: pair.assessmentModel,
+                rubricReasoning: pair.rubricReasoning,
+                assessmentReasoning: pair.assessmentReasoning,
+                instanceId: pair.instanceId,
+              }));
+              console.log('[Initial Load] Loaded modelPairs with reasoning from backend for', s.id, ':', modelPairs.length, 'pairs');
+            } else if (s.rubric_models && s.assessment_models && s.rubric_models.length > 0) {
+              // FALLBACK: Construct from arrays (legacy sessions without reasoning)
               modelPairs = s.rubric_models.map((rubricModel, index) => ({
                 rubricModel: rubricModel,
-                assessmentModel: s.assessment_models![index] || rubricModel, // Fallback to rubricModel if mismatch
+                assessmentModel: s.assessment_models![index] || rubricModel,
               }));
-              console.log('[Initial Load] Constructed modelPairs from backend for', s.id, ':', modelPairs.length, 'pairs');
+              console.log('[Initial Load] Constructed modelPairs from arrays (legacy) for', s.id, ':', modelPairs.length, 'pairs');
             }
             
             return {
@@ -128,7 +139,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               return existing ? { 
                 ...m, 
                 results: existing.results,
-                modelPairs: existing.modelPairs,  // Preserve modelPairs from local state
+                modelPairs: m.modelPairs,  // Use fresh backend data
                 reasoningBySelection: existing.reasoningBySelection  // Preserve reasoning config
               } : m;
             }));
@@ -156,14 +167,25 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       console.log('[refreshSessions] Fetched', sessions?.length, 'sessions from backend');
       
       const mapped: Assessment[] = (sessions || []).map(s => {
-        // Construct modelPairs from rubric_models and assessment_models arrays
+        // Use model_pairs from backend (includes reasoning configs)
         let modelPairs: ModelPair[] | undefined;
-        if (s.rubric_models && s.assessment_models && s.rubric_models.length > 0) {
+        if (s.model_pairs && s.model_pairs.length > 0) {
+          // NEW: Use complete model_pairs from backend with reasoning
+          modelPairs = s.model_pairs.map((pair: any) => ({
+            rubricModel: pair.rubricModel,
+            assessmentModel: pair.assessmentModel,
+            rubricReasoning: pair.rubricReasoning,
+            assessmentReasoning: pair.assessmentReasoning,
+            instanceId: pair.instanceId,
+          }));
+          console.log('[refreshSessions] Loaded modelPairs with reasoning from backend for', s.id, ':', modelPairs.length, 'pairs');
+        } else if (s.rubric_models && s.assessment_models && s.rubric_models.length > 0) {
+          // FALLBACK: Construct from arrays (legacy sessions without reasoning)
           modelPairs = s.rubric_models.map((rubricModel, index) => ({
             rubricModel: rubricModel,
-            assessmentModel: s.assessment_models![index] || rubricModel, // Fallback to rubricModel if mismatch
+            assessmentModel: s.assessment_models![index] || rubricModel,
           }));
-          console.log('[refreshSessions] Constructed modelPairs from backend for', s.id, ':', modelPairs.length, 'pairs');
+          console.log('[refreshSessions] Constructed modelPairs from arrays (legacy) for', s.id, ':', modelPairs.length, 'pairs');
         }
         
         return {
@@ -199,7 +221,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           return existing ? { 
             ...m, 
             results: existing.results,
-            modelPairs: existing.modelPairs,  // Preserve modelPairs from local state
+            modelPairs: m.modelPairs || existing.modelPairs,  // Use fresh backend data, fallback to local
             reasoningBySelection: existing.reasoningBySelection  // Preserve reasoning config
           } : m;
         });

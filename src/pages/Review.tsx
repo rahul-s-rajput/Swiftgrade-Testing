@@ -20,6 +20,18 @@ export const Review: React.FC = () => {
 
   const assessment = id ? getAssessment(id) : null;
 
+  // Debug: Log assessment modelPairs when component loads
+  useEffect(() => {
+    if (assessment) {
+      console.log('[Review] Assessment loaded:', {
+        id: assessment.id,
+        hasModelPairs: !!assessment.modelPairs,
+        modelPairsCount: assessment.modelPairs?.length,
+        modelPairs: assessment.modelPairs
+      });
+    }
+  }, [assessment?.id]);
+
   // Helper: parse model instance IDs of the form `${name}_${index}_${level}`
   // Returns base model id, optional index, and reasoning level if present
   const parseModelInstance = (modelId: string): { base: string; index?: number; level?: 'none' | 'low' | 'medium' | 'high' | 'custom' } => {
@@ -31,6 +43,20 @@ export const Review: React.FC = () => {
   };
 
   const capitalize = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+
+  // Helper to get reasoning label from ReasoningConfig
+  const getReasoningLabel = (reasoning?: { level?: string; effort?: string; tokens?: number; exclude?: boolean }): string => {
+    if (!reasoning) return '';
+    // Handle 'exclude' flag (means no reasoning)
+    if (reasoning.exclude === true) return '';
+    // Handle both 'level' and 'effort' field names
+    const levelValue = reasoning.level || reasoning.effort;
+    if (!levelValue || levelValue === 'none') return '';
+    if (levelValue === 'custom') {
+      return reasoning.tokens ? `Reasoning: Custom (${reasoning.tokens} tokens)` : 'Reasoning: Custom';
+    }
+    return `Reasoning: ${capitalize(levelValue)}`;
+  };
 
   // Build a human-readable label for a model, including reasoning info when available
   const formatModelLabel = (modelId: string): string => {
@@ -47,6 +73,55 @@ export const Review: React.FC = () => {
       }
     }
     return reasonPart ? `${parsed.base} — ${reasonPart}` : parsed.base;
+  };
+
+  // Format rubric model with reasoning info
+  const formatRubricModelLabel = (rubricModelId?: string, instanceId?: string): string => {
+    if (!rubricModelId) return '';
+    
+    // Find the matching model pair using instanceId (unique) or fallback to model names
+    const pair = assessment?.modelPairs?.find(
+      p => instanceId ? p.instanceId === instanceId : (p.rubricModel === rubricModelId)
+    );
+    
+    // Format rubric model with reasoning
+    const rubricReason = getReasoningLabel(pair?.rubricReasoning);
+    return rubricReason ? `${rubricModelId} — ${rubricReason}` : rubricModelId;
+  };
+
+  // Format model pair label with reasoning info
+  const formatModelPairLabel = (rubricModelId?: string, assessmentModelId?: string, instanceId?: string): string => {
+    if (!rubricModelId || !assessmentModelId) return '';
+    
+    console.log('[formatModelPairLabel] Looking for:', {
+      instanceId,
+      rubricModelId,
+      assessmentModelId,
+      availablePairs: assessment?.modelPairs?.map(p => ({
+        instanceId: p.instanceId,
+        rubricModel: p.rubricModel,
+        assessmentModel: p.assessmentModel,
+        rubricReasoning: p.rubricReasoning,
+        assessmentReasoning: p.assessmentReasoning
+      }))
+    });
+    
+    // Find the matching model pair using instanceId (unique) or fallback to model names
+    const pair = assessment?.modelPairs?.find(
+      p => instanceId ? p.instanceId === instanceId : (p.rubricModel === rubricModelId && p.assessmentModel === assessmentModelId)
+    );
+    
+    console.log('[formatModelPairLabel] Found pair:', pair);
+    
+    // Format rubric model with reasoning
+    const rubricReason = getReasoningLabel(pair?.rubricReasoning);
+    const rubricLabel = rubricReason ? `${rubricModelId} — ${rubricReason}` : rubricModelId;
+    
+    // Format assessment model with reasoning
+    const assessmentReason = getReasoningLabel(pair?.assessmentReasoning);
+    const assessmentLabel = assessmentReason ? `${assessmentModelId} — ${assessmentReason}` : assessmentModelId;
+    
+    return `${rubricLabel} → ${assessmentLabel}`;
   };
 
   // If session is complete but results missing, trigger a load with local skeleton
@@ -395,7 +470,7 @@ export const Review: React.FC = () => {
                           <div className="flex items-center">
                             <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full mr-3"></div>
                             {modelResult.rubricModel && modelResult.assessmentModel
-                              ? `${formatModelLabel(modelResult.rubricModel)} → ${formatModelLabel(modelResult.assessmentModel)}`
+                              ? formatModelPairLabel(modelResult.rubricModel, modelResult.assessmentModel, modelResult.model)
                               : formatModelLabel(modelResult.model)} (Average)
                           </div>
                         </td>
@@ -729,7 +804,7 @@ export const Review: React.FC = () => {
                           <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full mr-3"></div>
                           <h4 className="text-lg font-bold text-slate-900">
                             {modelResult.rubricModel && modelResult.assessmentModel
-                              ? `${formatModelLabel(modelResult.rubricModel)} → ${formatModelLabel(modelResult.assessmentModel)}`
+                              ? formatModelPairLabel(modelResult.rubricModel, modelResult.assessmentModel, modelResult.model)
                               : formatModelLabel(modelResult.model)}
                           </h4>
                         </div>
@@ -828,7 +903,9 @@ export const Review: React.FC = () => {
                           <div className="flex items-center mb-4">
                             <div className="w-4 h-4 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mr-3"></div>
                             <h4 className="text-lg font-bold text-slate-900">
-                              {modelResult.rubricModel || formatModelLabel(modelResult.model)}
+                              {modelResult.rubricModel 
+                                ? formatRubricModelLabel(modelResult.rubricModel, modelResult.model)
+                                : formatModelLabel(modelResult.model)}
                             </h4>
                           </div>
                           <p className="text-sm text-slate-500 italic">No rubric analysis available for this model</p>
@@ -841,7 +918,9 @@ export const Review: React.FC = () => {
                         <div className="flex items-center mb-4">
                           <div className="w-4 h-4 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mr-3"></div>
                           <h4 className="text-lg font-bold text-slate-900">
-                            {modelResult.rubricModel || formatModelLabel(modelResult.model)}
+                            {modelResult.rubricModel 
+                              ? formatRubricModelLabel(modelResult.rubricModel, modelResult.model)
+                              : formatModelLabel(modelResult.model)}
                           </h4>
                         </div>
                         <div className="grid gap-4">
@@ -880,7 +959,7 @@ export const Review: React.FC = () => {
                       <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full mr-3"></div>
                       <h4 className="text-lg font-bold text-slate-900">
                         {modelResult.rubricModel && modelResult.assessmentModel
-                          ? `${formatModelLabel(modelResult.rubricModel)} → ${formatModelLabel(modelResult.assessmentModel)}`
+                          ? formatModelPairLabel(modelResult.rubricModel, modelResult.assessmentModel, modelResult.model)
                           : formatModelLabel(modelResult.model)}
                       </h4>
                     </div>

@@ -39,6 +39,7 @@ def list_sessions():
                 default_tries=(it.get("default_tries") if it.get("default_tries") is not None else None),
                 rubric_models=(it.get("rubric_models") or None),
                 assessment_models=(it.get("assessment_models") or None),
+                model_pairs=(it.get("model_pairs") or None),  # NEW: Complete model pair specs
             )
             for it in items
             if it.get("id") is not None

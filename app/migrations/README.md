@@ -9,6 +9,8 @@ This folder contains database migration scripts for the grading rubric feature.
 ### Migration Scripts
 - **`001_add_grading_rubric_support.sql`** - Main migration script
 - **`001_add_grading_rubric_support_ROLLBACK.sql`** - Rollback script
+- **`002_add_model_pairs_column.sql`** - Model pairs migration script
+- **`002_add_model_pairs_column_ROLLBACK.sql`** - Model pairs rollback script
 - **`run_migration.py`** - Helper script to view and run migrations
 
 ---
