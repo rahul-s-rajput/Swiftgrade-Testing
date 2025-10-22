@@ -1,11 +1,19 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Plus, Loader2, CheckCircle, Trash2, Eye, Calendar, Cpu, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Plus, Loader2, CheckCircle, Trash2, Eye, Calendar, Cpu, RotateCcw, AlertTriangle, MoreHorizontal, Copy, Edit3 } from 'lucide-react';
 import { useAssessments } from '../context/AssessmentContext';
 
 export const Home: React.FC = () => {
-  const { assessments, deleteAssessment, refreshSessions, retryAssessment, loading } = useAssessments();
+  const { assessments, deleteAssessment, refreshSessions, retryAssessment, renameAssessment, loading } = useAssessments();
+  const navigate = useNavigate();
   const [refreshing, setRefreshing] = useState(false);
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+  const [renameModal, setRenameModal] = useState<{ isOpen: boolean; assessmentId: string; currentName: string }>({
+    isOpen: false,
+    assessmentId: '',
+    currentName: ''
+  });
+  const [newName, setNewName] = useState('');
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -13,6 +21,58 @@ export const Home: React.FC = () => {
     if (window.confirm('Are you sure you want to delete this assessment?')) {
       deleteAssessment(id);
     }
+  };
+
+  const handleUseAsTemplate = async (assessmentId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setOpenDropdownId(null);
+
+    try {
+      // Navigate to new assessment with template data
+      navigate(`/new-assessment?template=${assessmentId}`);
+    } catch (error) {
+      console.error('Failed to load template:', error);
+    }
+  };
+
+  const toggleDropdown = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setOpenDropdownId(openDropdownId === id ? null : id);
+  };
+
+  // Close dropdown when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = () => setOpenDropdownId(null);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  const handleRename = (assessmentId: string, currentName: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setOpenDropdownId(null);
+    setRenameModal({ isOpen: true, assessmentId, currentName });
+    setNewName(currentName);
+  };
+
+  const handleRenameSubmit = async () => {
+    if (!newName.trim()) return;
+
+    try {
+      await renameAssessment(renameModal.assessmentId, newName.trim());
+      setRenameModal({ isOpen: false, assessmentId: '', currentName: '' });
+      setNewName('');
+    } catch (error) {
+      console.error('Failed to rename assessment:', error);
+      // Optionally show error message to user
+    }
+  };
+
+  const handleRenameCancel = () => {
+    setRenameModal({ isOpen: false, assessmentId: '', currentName: '' });
+    setNewName('');
   };
 
   const handleRefresh = async () => {
@@ -218,6 +278,39 @@ export const Home: React.FC = () => {
                           <RotateCcw className="w-5 h-5" />
                         </button>
                       )}
+
+                      {/* Three-dot menu for completed assessments */}
+                      {assessment.status === 'complete' && (
+                        <div className="relative">
+                          <button
+                            onClick={(e) => toggleDropdown(assessment.id, e)}
+                            className="p-2 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                            title="More options"
+                          >
+                            <MoreHorizontal className="w-5 h-5" />
+                          </button>
+
+                          {openDropdownId === assessment.id && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-10">
+                              <button
+                                onClick={(e) => handleRename(assessment.id, assessment.name, e)}
+                                className="flex items-center w-full px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                              >
+                                <Edit3 className="w-4 h-4 mr-2" />
+                                Rename
+                              </button>
+                              <button
+                                onClick={(e) => handleUseAsTemplate(assessment.id, e)}
+                                className="flex items-center w-full px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                              >
+                                <Copy className="w-4 h-4 mr-2" />
+                                Use as Template
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <button
                         onClick={(e) => handleDelete(assessment.id, e)}
                         className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
@@ -233,6 +326,45 @@ export const Home: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Rename Modal */}
+      {renameModal.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">Rename Assessment</h3>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Enter new assessment name"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleRenameSubmit();
+                } else if (e.key === 'Escape') {
+                  handleRenameCancel();
+                }
+              }}
+            />
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={handleRenameCancel}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRenameSubmit}
+                disabled={!newName.trim()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Rename
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

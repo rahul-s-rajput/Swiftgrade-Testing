@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from ..schemas import GradeSingleReq, GradeSingleRes
 from ..supabase_client import supabase
+from ..util.json_parser import parse_llm_json_response, extract_json_from_text
 
 
 router = APIRouter()
@@ -283,17 +284,20 @@ def _encode_url(u: str) -> str:
         return u
 
 
-def _build_rubric_messages(rubric_urls: List[str], questions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _build_rubric_messages(rubric_urls: List[str], questions: List[Dict[str, Any]], answer_key_urls: List[str] | None = None) -> List[Dict[str, Any]]:
     """Build OpenRouter chat messages for rubric analysis using DB-configured templates.
 
     Placeholders supported:
-    - In system template: [Grading rubric images], [Question list]
+    - In system template: [First student's assessment], [Question list], [Answer key]
     - In user template: Same placeholders supported
     """
 
     # Normalize URLs
     rub_urls = [
         _encode_url(u) for u in (rubric_urls or []) if isinstance(u, str) and u
+    ]
+    key_urls = [
+        _encode_url(u) for u in (answer_key_urls or []) if isinstance(u, str) and u
     ]
 
     # Try to load rubric templates from Supabase
@@ -370,9 +374,18 @@ def _build_rubric_messages(rubric_urls: List[str], questions: List[Dict[str, Any
         
         # Define placeholders for rubric messages
         placeholders = {
-            "[Grading rubric images]": ("images", rub_urls),
-            "[Question list]": ("text", questions_list)
+            "[First student's assessment]": ("images", rub_urls),
+            "[Question list]": ("text", questions_list),
+            "[Answer key]": ("images", key_urls)
         }
+        
+        if OPENROUTER_DEBUG:
+            logging.info("🔍 Rubric placeholders defined:")
+            for ph, (ptype, pcontent) in placeholders.items():
+                if ptype == "images":
+                    logging.info("  - %s: type=%s, url_count=%s", ph, ptype, len(pcontent) if pcontent else 0)
+                else:
+                    logging.info("  - %s: type=%s, content_length=%s", ph, ptype, len(pcontent) if pcontent else 0)
         
         # Process user template
         remaining_template = user_template
@@ -381,6 +394,10 @@ def _build_rubric_messages(rubric_urls: List[str], questions: List[Dict[str, Any
             index = remaining_template.find(placeholder)
             if index != -1:
                 placeholder_positions.append((index, placeholder, content_type, content))
+                if OPENROUTER_DEBUG:
+                    logging.info("  ✓ Found %s at position %s", placeholder, index)
+            elif OPENROUTER_DEBUG:
+                logging.info("  ✗ Placeholder %s NOT found in template", placeholder)
         
         placeholder_positions.sort(key=lambda x: x[0])
         
@@ -398,8 +415,14 @@ def _build_rubric_messages(rubric_urls: List[str], questions: List[Dict[str, Any
                     if content_type == "images" and content:
                         for url in content:
                             user_content.append({"type": "image_url", "image_url": {"url": url, "detail": "high"}})
+                        if OPENROUTER_DEBUG:
+                            logging.info("  ✅ Added %s images for %s", len(content), placeholder)
                     elif content_type == "text" and content:
                         user_content.append({"type": "text", "text": content})
+                        if OPENROUTER_DEBUG:
+                            logging.info("  ✅ Added text content for %s (%s chars)", placeholder, len(content))
+                elif OPENROUTER_DEBUG:
+                    logging.warning("  ⚠️ Placeholder %s found but content is empty", placeholder)
                 
                 current_pos = index + len(placeholder)
             
@@ -449,14 +472,15 @@ async def _call_rubric_llm(
     reasoning: Dict[str, Any] | None,
     session_id: str,
     try_index: int,
-    instance_id: str | None = None
+    instance_id: str | None = None,
+    answer_key_urls: List[str] | None = None
 ) -> str:
     """Call rubric analysis LLM and return extracted rubric text.
     
     Stores the full response in rubric_result table.
     Returns the extracted rubric text for use in assessment.
     """
-    messages = _build_rubric_messages(rubric_urls, questions)
+    messages = _build_rubric_messages(rubric_urls, questions, answer_key_urls)
     
     # Call OpenRouter
     raw_response = await _call_openrouter(
@@ -469,7 +493,7 @@ async def _call_rubric_llm(
         instance_id=instance_id or model
     )
     
-    # Extract rubric text from response and parse JSON
+    # Extract rubric text from response and parse JSON using new parser
     rubric_text = ""
     raw_text = ""  # Define outside try block for proper scoping
     validation_errors = None
@@ -495,106 +519,27 @@ async def _call_rubric_llm(
             else:
                 validation_errors = {"reason": "unsupported_content_type"}
                 
-            # Extract JSON from raw text (handles preamble, markdown fences, etc.)
+            # Use new JSON parser with sanitization
             if raw_text and not validation_errors:
-                import re
+                parsed, parse_error = parse_llm_json_response(raw_text, strict=False)
                 
-                text = raw_text
-                
-                # Try to extract content from markdown code block using regex
-                # Pattern: ```json or ``` at start, capture everything until closing ```
-                code_block_pattern = r'```(?:json|JSON)?\s*\n(.*?)```'
-                code_match = re.search(code_block_pattern, text, re.DOTALL)
-                
-                if code_match:
-                    # Found code block, extract the content (which may still have preamble before {)
-                    text = code_match.group(1).strip()
+                if parse_error:
+                    validation_errors = parse_error
                     if OPENROUTER_DEBUG:
-                        logging.info("📦 Extracted content from markdown code block (%d chars)", len(text))
-                else:
-                    # No code block found, use raw text as-is
-                    text = text.strip()
-                    if OPENROUTER_DEBUG:
-                        logging.info("📝 No markdown code block found, using raw text (%d chars)", len(text))
-                
-                # Find the first opening brace (skips any remaining preamble text)
-                start = text.find("{")
-                if start == -1:
-                    if OPENROUTER_DEBUG:
-                        logging.warning("⚠️ No JSON object found in rubric LLM response")
-                        logging.warning("Response preview: %s", text[:300])
-                    validation_errors = {"reason": "no_json_in_content", "preview": text[:200]}
-                else:
-                    # Log if there's preamble text before JSON
-                    if start > 0 and OPENROUTER_DEBUG:
-                        preamble = text[:start].strip()
-                        if preamble:
-                            logging.info("📝 Rubric LLM added preamble before JSON: %s", preamble[:100])
-                    
-                    # Use brace matching to find closing brace
-                    brace_count = 0
-                    end = -1
-                    in_string = False
-                    escape_next = False
-                    
-                    for i in range(start, len(text)):
-                        char = text[i]
-                        
-                        if escape_next:
-                            escape_next = False
-                            continue
-                        
-                        if char == '\\':
-                            escape_next = True
-                            continue
-                        
-                        if char == '"' and not escape_next:
-                            in_string = not in_string
-                            continue
-                        
-                        if not in_string:
-                            if char == '{':
-                                brace_count += 1
-                            elif char == '}':
-                                brace_count -= 1
-                                if brace_count == 0:
-                                    end = i
-                                    break
-                    
-                    if end == -1:
+                        logging.warning("⚠️ Rubric JSON parsing failed: %s", parse_error)
+                elif parsed:
+                    # Validate structure
+                    if not isinstance(parsed, dict):
+                        validation_errors = {"reason": "rubric_not_dict"}
+                    elif "grading_criteria" not in parsed:
+                        validation_errors = {"reason": "missing_grading_criteria_key"}
+                    elif not isinstance(parsed.get("grading_criteria"), list):
+                        validation_errors = {"reason": "grading_criteria_not_array"}
+                    else:
+                        # Valid rubric - convert back to clean JSON string
+                        rubric_text = json.dumps(parsed, ensure_ascii=False)
                         if OPENROUTER_DEBUG:
-                            logging.warning("⚠️ Brace matching failed for rubric response")
-                        end = text.rfind("}")
-                        if end == -1 or end <= start:
-                            validation_errors = {"reason": "no_closing_brace", "preview": text[start:start+200]}
-                    
-                    if end != -1 and not validation_errors:
-                        # Extract only the JSON portion
-                        json_str = text[start : end + 1]
-                        
-                        # Validate it's proper JSON
-                        try:
-                            parsed = json.loads(json_str)
-                            rubric_text = json_str  # Store the clean JSON string
-                            
-                            if OPENROUTER_DEBUG:
-                                logging.info("✅ Successfully extracted and validated rubric JSON (%d chars)", len(json_str))
-                                
-                            # Validate structure
-                            if not isinstance(parsed, dict):
-                                validation_errors = {"reason": "rubric_not_dict"}
-                            elif "grading_criteria" not in parsed:
-                                validation_errors = {"reason": "missing_grading_criteria_key"}
-                            elif not isinstance(parsed.get("grading_criteria"), list):
-                                validation_errors = {"reason": "grading_criteria_not_array"}
-                        except json.JSONDecodeError as json_err:
-                            logging.error("❌ Rubric JSON parse error: %s", str(json_err))
-                            logging.error("Attempted to parse: %s", json_str[:500])
-                            validation_errors = {
-                                "reason": "parse_exception",
-                                "error": str(json_err),
-                                "json_preview": json_str[:200]
-                            }
+                            logging.info("✅ Successfully extracted and validated rubric JSON (%d chars)", len(rubric_text))
                             
     except Exception as e:
         validation_errors = {"reason": "parse_exception", "error": str(e)}
@@ -611,8 +556,54 @@ async def _call_rubric_llm(
         if raw_text:
             logging.warning("Raw text preview (first 500 chars): %s", raw_text[:500])
     
-    # Store in rubric_result table
+    # Extract token usage from rubric response and store in token_usage table
+    rubric_token_usage = _extract_token_usage(raw_response)
+
     model_identifier = instance_id if instance_id else model
+
+    # DEBUG: Log rubric token usage extraction
+    if OPENROUTER_DEBUG and rubric_token_usage:
+        logging.info("💰 RUBRIC TOKEN USAGE DEBUG - %s (try %s):", model_identifier, try_index)
+        logging.info("  Input: %d, Output: %d, Reasoning: %d",
+                   rubric_token_usage.get("input_tokens", 0),
+                   rubric_token_usage.get("output_tokens", 0),
+                   rubric_token_usage.get("reasoning_tokens", 0))
+        logging.info("  Cache Creation: %d, Cache Read: %d, Cost: $%s",
+                   rubric_token_usage.get("cache_creation_input_tokens", 0),
+                   rubric_token_usage.get("cache_read_input_tokens", 0),
+                   rubric_token_usage.get("cost_estimate", 0))
+    
+    # Store token usage in token_usage table with phase='rubric'
+    if rubric_token_usage:
+        try:
+            token_record = {
+                "session_id": session_id,
+                "model_name": model_identifier,
+                "try_index": try_index,
+                "phase": "rubric",  # NEW: Distinguish rubric from assessment
+                "input_tokens": rubric_token_usage.get("input_tokens", 0),
+                "output_tokens": rubric_token_usage.get("output_tokens", 0),
+                "reasoning_tokens": rubric_token_usage.get("reasoning_tokens", 0),
+                "total_tokens": rubric_token_usage.get("total_tokens", 0),  # FIX: Include total_tokens
+                "cache_creation_input_tokens": rubric_token_usage.get("cache_creation_input_tokens", 0),
+                "cache_read_input_tokens": rubric_token_usage.get("cache_read_input_tokens", 0),
+                "model_id": rubric_token_usage.get("model_id"),
+                "finish_reason": rubric_token_usage.get("finish_reason"),
+                "cost_estimate": rubric_token_usage.get("cost_estimate"),
+                "metadata": {"raw_usage": raw_response.get("usage", {}), "phase": "rubric"},
+            }
+            
+            supabase.table("token_usage").upsert(
+                token_record,
+                on_conflict="session_id,model_name,try_index,phase"
+            ).execute()
+            
+            if OPENROUTER_DEBUG:
+                logging.info("✅ Saved rubric token usage for %s (try %s)", model_identifier, try_index)
+        except Exception as e:
+            logging.error("Failed to store rubric token usage: %s", e)
+    
+    # Store rubric result (without token columns)
     rubric_record = {
         "session_id": session_id,
         "model_name": model_identifier,
@@ -808,11 +799,11 @@ def _build_messages(
         if "[Question list]" in sys_text:
             sys_text = sys_text.replace("[Question list]", questions_list)
         
-        # NEW: Replace [Grading Rubric] placeholder with rubric text
-        if rubric_text and "[Grading Rubric]" in sys_text:
-            sys_text = sys_text.replace("[Grading Rubric]", rubric_text)
+        # NEW: Replace [Grading criteria] placeholder with rubric text
+        if rubric_text and "[Grading criteria]" in sys_text:
+            sys_text = sys_text.replace("[Grading criteria]", rubric_text)
             if OPENROUTER_DEBUG:
-                logging.info("✅ Replaced [Grading Rubric] in system template with %s chars", len(rubric_text))
+                logging.info("✅ Replaced [Grading criteria] in system template with %s chars", len(rubric_text))
         
         if "[Response schema]" in sys_text:
             sys_text = sys_text.replace("[Response schema]", schema_text)
@@ -832,7 +823,7 @@ def _build_messages(
             "[Student assessment]": ("images", stu_urls),
             "[Question list]": ("text", questions_list),
             "[Response schema]": ("text", schema_text),
-            "[Grading Rubric]": ("text", rubric_text if rubric_text else "")
+            "[Grading criteria]": ("text", rubric_text if rubric_text else "")
         }
         
         if OPENROUTER_DEBUG:
@@ -875,11 +866,11 @@ def _build_messages(
                     elif content_type == "text" and content:
                         # Add text content
                         user_content.append({"type": "text", "text": content})
-                        if OPENROUTER_DEBUG and placeholder == "[Grading Rubric]":
-                            logging.info("✅ Added [Grading Rubric] content: %s chars", len(content))
+                        if OPENROUTER_DEBUG and placeholder == "[Grading criteria]":
+                            logging.info("✅ Added [Grading criteria] content: %s chars", len(content))
                 else:
-                    if OPENROUTER_DEBUG and placeholder == "[Grading Rubric]":
-                        logging.warning("⚠️ [Grading Rubric] placeholder found but content is empty/falsy: %s", repr(content))
+                    if OPENROUTER_DEBUG and placeholder == "[Grading criteria]":
+                        logging.warning("⚠️ [Grading criteria] placeholder found but content is empty/falsy: %s", repr(content))
                 
                 # Move position past the placeholder
                 current_pos = index + len(placeholder)
@@ -954,17 +945,65 @@ def _build_messages(
 def _extract_token_usage(raw: Dict[str, Any]) -> Dict[str, Any] | None:
     """Extract token usage information from OpenRouter API response."""
     try:
+        # DEBUG: Log the complete raw response structure
+        if OPENROUTER_DEBUG:
+            logging.info("\n" + "="*80)
+            logging.info("🔍 RAW OPENROUTER RESPONSE DEBUG")
+            logging.info("="*80)
+            logging.info("📄 Complete response keys: %s", list(raw.keys()))
+
+            # Log usage section in detail
+            usage = raw.get("usage", {})
+            if usage:
+                logging.info("📊 Usage section keys: %s", list(usage.keys()))
+                logging.info("📊 Usage values:")
+                for key, value in usage.items():
+                    logging.info("  %s: %s", key, value)
+            else:
+                logging.warning("⚠️ No 'usage' section found in response")
+
+            # Log other potentially relevant sections
+            if "model" in raw:
+                logging.info("🤖 Model: %s", raw["model"])
+
+            if "choices" in raw and raw["choices"]:
+                choice = raw["choices"][0]
+                if "finish_reason" in choice:
+                    logging.info("🏁 Finish reason: %s", choice["finish_reason"])
+
+            # Log any other top-level keys that might contain token info
+            for key in raw.keys():
+                if "token" in key.lower() or "usage" in key.lower() or "cost" in key.lower():
+                    logging.info("💰 %s: %s", key, raw[key])
+
+            # Look for alternative field names that might contain reasoning tokens
+            reasoning_fields = []
+            for key in usage.keys() if usage else []:
+                if "reason" in key.lower() or "think" in key.lower() or "chain" in key.lower():
+                    reasoning_fields.append((key, usage[key]))
+
+            if reasoning_fields:
+                logging.info("🧠 Potential reasoning token fields:")
+                for field_name, value in reasoning_fields:
+                    logging.info("  %s: %s", field_name, value)
+
+            logging.info("="*80)
+
         usage = raw.get("usage", {})
         if not usage:
             return None
         
+        # Handle different token structures from different providers
+        completion_details = usage.get("completion_tokens_details", {})
+        prompt_details = usage.get("prompt_tokens_details", {})
+
         token_data = {
             "input_tokens": usage.get("prompt_tokens", 0),
             "output_tokens": usage.get("completion_tokens", 0),
-            "reasoning_tokens": usage.get("reasoning_tokens", 0),
+            "reasoning_tokens": completion_details.get("reasoning_tokens", 0),
             "total_tokens": usage.get("total_tokens", 0),
-            "cache_creation_input_tokens": usage.get("cache_creation_input_tokens", 0),
-            "cache_read_input_tokens": usage.get("cache_read_input_tokens", 0),
+            "cache_creation_input_tokens": prompt_details.get("cached_tokens", 0),
+            "cache_read_input_tokens": 0,  # May not be provided by all providers
         }
         
         # Add model info if available
@@ -1059,7 +1098,10 @@ def _repair_json_string(text: str) -> str:
 
 def _parse_model_output(raw: Dict[str, Any]) -> Tuple[List[Dict[str, Any]] | None, Dict[str, Any] | None]:
     """Attempt to parse the first choice content as JSON with expected schema.
-    Returns (answers, validation_errors)."""
+    Returns (answers, validation_errors).
+    
+    Uses improved JSON parser with automatic sanitization for invalid escape sequences.
+    """
     try:
         choices = raw.get("choices") or []
         if not choices:
@@ -1078,124 +1120,18 @@ def _parse_model_output(raw: Dict[str, Any]) -> Tuple[List[Dict[str, Any]] | Non
         else:
             return None, {"reason": "unsupported_content_type"}
 
-        # Try to locate JSON block with improved parsing
-        import re
+        # Use new JSON parser with automatic sanitization
+        obj, parse_error = parse_llm_json_response(text, strict=False)
         
-        text = text.strip()
+        if parse_error:
+            logging.error("❌ Assessment JSON parsing failed: %s", parse_error)
+            return None, parse_error
         
-        # Try to extract content from markdown code block using regex
-        # This properly handles preamble text BEFORE the code block
-        code_block_pattern = r'```(?:json|JSON)?\s*\n(.*?)```'
-        code_match = re.search(code_block_pattern, text, re.DOTALL)
-        
-        if code_match:
-            # Found code block, extract the content
-            text = code_match.group(1).strip()
-            if OPENROUTER_DEBUG:
-                logging.info("📦 Extracted content from markdown code block (%d chars)", len(text))
-        else:
-            # No code block, use raw text
-            text = text.strip()
-            if OPENROUTER_DEBUG:
-                logging.info("📝 No markdown code block found, using raw text (%d chars)", len(text))
-        
-        # Find the first opening brace (skips any remaining preamble text)
-        start = text.find("{")
-        if start == -1:
-            if OPENROUTER_DEBUG:
-                logging.warning("⚠️ No JSON object found in LLM response")
-                logging.warning("Response preview: %s", text[:300])
-            return None, {"reason": "no_json_in_content", "preview": text[:200]}
-        
-        # Log if there's text before the JSON (common with some models)
-        if start > 0 and OPENROUTER_DEBUG:
-            preamble = text[:start].strip()
-            if preamble:
-                logging.info("📝 LLM added preamble before JSON: %s", preamble[:100])
-        
-        # Use brace matching to find the MATCHING closing brace
-        # This handles nested objects correctly
-        brace_count = 0
-        end = -1
-        in_string = False
-        escape_next = False
-        
-        for i in range(start, len(text)):
-            char = text[i]
-            
-            # Handle string escaping
-            if escape_next:
-                escape_next = False
-                continue
-            
-            if char == '\\':
-                escape_next = True
-                continue
-            
-            # Track if we're inside a string (to ignore braces in strings)
-            if char == '"' and not escape_next:
-                in_string = not in_string
-                continue
-            
-            # Only count braces outside of strings
-            if not in_string:
-                if char == '{':
-                    brace_count += 1
-                elif char == '}':
-                    brace_count -= 1
-                    if brace_count == 0:
-                        # Found the matching closing brace
-                        end = i
-                        break
-        
-        if end == -1:
-            # Fallback to rfind if brace matching fails
-            if OPENROUTER_DEBUG:
-                logging.warning("⚠️ Brace matching failed, using fallback rfind method")
-            end = text.rfind("}")
-            if end == -1 or end <= start:
-                if OPENROUTER_DEBUG:
-                    logging.error("❌ No closing brace found in LLM response")
-                    logging.error("Text excerpt: %s", text[start:start+200])
-                return None, {"reason": "no_closing_brace", "preview": text[start:start+200]}
-        
-        # Extract ONLY the JSON portion (nothing after the closing brace)
-        json_str = text[start : end + 1]
+        if not obj:
+            return None, {"reason": "empty_parsed_object"}
         
         if OPENROUTER_DEBUG:
-            logging.info("🔍 Extracted JSON string (%d chars)", len(json_str))
-            if len(json_str) < 500:
-                logging.debug("Full JSON: %s", json_str)
-        
-        # Attempt to parse
-        try:
-            obj = json.loads(json_str)
-            if OPENROUTER_DEBUG:
-                logging.info("✅ Successfully parsed JSON response")
-        except json.JSONDecodeError as json_err:
-            # If parsing still fails, log the problematic JSON for debugging
-            logging.error("❌ JSON parse error: %s", str(json_err))
-            logging.error("Error at position %s (line %s, col %s)", 
-                         json_err.pos if hasattr(json_err, 'pos') else 'unknown',
-                         json_err.lineno if hasattr(json_err, 'lineno') else 'unknown',
-                         json_err.colno if hasattr(json_err, 'colno') else 'unknown')
-            logging.error("Attempted to parse: %s", json_str[:500])
-            
-            # Try to identify common issues
-            error_hints = []
-            if "Expecting property name" in str(json_err):
-                error_hints.append("Possible trailing comma or missing quote")
-            if "Expecting value" in str(json_err):
-                error_hints.append("Possible extra comma or missing value")
-            if "Unterminated string" in str(json_err):
-                error_hints.append("String not properly closed")
-            
-            return None, {
-                "reason": "parse_exception", 
-                "error": str(json_err), 
-                "json_preview": json_str[:200],
-                "hints": error_hints if error_hints else None
-            }
+            logging.info("✅ Successfully parsed assessment JSON response")
         
         # Extract student info if present (for future use/logging)
         student_info = {
@@ -1362,10 +1298,12 @@ def _parse_model_output(raw: Dict[str, Any]) -> Tuple[List[Dict[str, Any]] | Non
 
 @router.post("/grade/single", response_model=GradeSingleRes)
 async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
-    # Validate session exists
-    s = supabase.table("session").select("id").eq("id", payload.session_id).execute()
+    # Validate session exists and load configuration
+    s = supabase.table("session").select("*").eq("id", payload.session_id).execute()
     if not s.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session_id not found")
+
+    session_data = s.data[0]
 
     # Load images (URL-only) and questions for this session
     imgs = (
@@ -1401,20 +1339,74 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
         for q in db_questions
     ]
 
-    # Determine if using new model_pairs or legacy models
-    use_model_pairs = payload.model_pairs is not None and len(payload.model_pairs) > 0
-    use_legacy_models = payload.models is not None and len(payload.models) > 0
-    
-    if not use_model_pairs and not use_legacy_models:
-        raise _bad_request("Either model_pairs or models must be provided")
+    # Handle retry: if no model pairs provided, load from session configuration
+    payload_model_pairs = payload.model_pairs
+
+    # If no model pairs in request, try to load from session for retry
+    if not payload_model_pairs or len(payload_model_pairs) == 0:
+        if session_data.get("model_pairs"):
+            # Parse stored model pairs from session
+            try:
+                stored_pairs = session_data["model_pairs"]
+                # Handle both JSON string and already-parsed list formats
+                if isinstance(stored_pairs, str):
+                    import json
+                    stored_pairs = json.loads(stored_pairs)
+                # Convert to ModelPair objects (simplified version)
+                from pydantic import BaseModel
+                class SimpleModel(BaseModel):
+                    name: str
+                    tries: int = None
+                    reasoning: dict = None
+                    instance_id: str = None
+
+                class SimpleModelPair(BaseModel):
+                    rubric_model: SimpleModel
+                    assessment_model: SimpleModel
+                    rubric_reasoning: dict = None
+                    assessment_reasoning: dict = None
+                    instance_id: str = None
+
+                converted_pairs = []
+                for pair in stored_pairs:
+                    rubric_model = SimpleModel(
+                        name=pair["rubricModel"],
+                        reasoning=pair.get("rubricReasoning"),
+                        instance_id=pair.get("instanceId")
+                    )
+                    assessment_model = SimpleModel(
+                        name=pair["assessmentModel"],
+                        reasoning=pair.get("assessmentReasoning"),
+                        instance_id=pair.get("instanceId")
+                    )
+                    model_pair = SimpleModelPair(
+                        rubric_model=rubric_model,
+                        assessment_model=assessment_model,
+                        rubric_reasoning=pair.get("rubricReasoning"),
+                        assessment_reasoning=pair.get("assessmentReasoning"),
+                        instance_id=pair.get("instanceId")
+                    )
+                    converted_pairs.append(model_pair)
+
+                payload_model_pairs = converted_pairs
+                if OPENROUTER_DEBUG:
+                    logging.info("🔄 RETRY: Loaded %d model pairs from session", len(converted_pairs))
+            except Exception as e:
+                logging.error("Failed to parse stored model pairs: %s", e)
+                raise _bad_request("Failed to load model configuration for retry")
+        else:
+            raise _bad_request("No model configuration found. Please specify model_pairs.")
+
+    # Use model pairs flow
+    use_model_pairs = True
     
     # Expand model tries
     if use_model_pairs:
         # NEW: Model pairs flow (rubric + assessment)
         # items: List[Tuple[rubric_model, assessment_model, try_index, rubric_reasoning, assessment_reasoning, instance_id]]
         items: List[Tuple[str, str, int, Dict[str, Any] | None, Dict[str, Any] | None, str | None]] = []
-        
-        for pair_idx, pair in enumerate(payload.model_pairs):
+
+        for pair_idx, pair in enumerate(payload_model_pairs):
             rubric_model = pair.rubric_model.name
             assessment_model = pair.assessment_model.name
             
@@ -1433,58 +1425,32 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
                 items.append((rubric_model, assessment_model, i, rubric_reasoning, assessment_reasoning, pair_instance_id))
         
         if OPENROUTER_DEBUG:
-            logging.info("🔗 Using model pairs flow: %s pairs expanded to %s tasks", len(payload.model_pairs), len(items))
-    else:
-        # LEGACY: Single models flow (no rubric)
-        # items: List[Tuple[model, try_index, reasoning, instance_id, None, None]]
-        # We'll use a compatible tuple structure for backward compat
-        items: List[Tuple[str, str | None, int, Dict[str, Any] | None, Dict[str, Any] | None, str | None]] = []
-        
-        for m in payload.models:
-            model_name = m.name
-            tries = m.tries if m.tries and m.tries > 0 else (payload.default_tries or 1)
-            tries = max(1, tries)
-            model_reasoning = m.reasoning if hasattr(m, 'reasoning') and m.reasoning else payload.reasoning
-            instance_id = m.instance_id if hasattr(m, 'instance_id') and m.instance_id else None
-            
-            for i in range(1, tries + 1):
-                # Legacy format: (model, None, try_index, reasoning, None, instance_id)
-                # None in position 1 indicates no rubric model (legacy flow)
-                items.append((model_name, None, i, model_reasoning, None, instance_id))
-        
-        if OPENROUTER_DEBUG:
-            logging.info("🔙 Using legacy single models flow: %s models expanded to %s tasks", len(payload.models), len(items))
+            logging.info("🔗 Using model pairs flow: %s pairs expanded to %s tasks", len(payload_model_pairs), len(items))
 
     # Persist session configuration for UI
     try:
-        if use_model_pairs:
-            rubric_models = [pair.rubric_model.name for pair in payload.model_pairs]
-            assessment_models = [pair.assessment_model.name for pair in payload.model_pairs]
-            
-            # Serialize complete model pair specifications including reasoning configs
-            model_pairs_data = [
-                {
-                    "rubricModel": pair.rubric_model.name,
-                    "assessmentModel": pair.assessment_model.name,
-                    "rubricReasoning": pair.rubric_model.reasoning if pair.rubric_model.reasoning else None,
-                    "assessmentReasoning": pair.assessment_model.reasoning if pair.assessment_model.reasoning else None,
-                    "instanceId": pair.instance_id if pair.instance_id else None,
-                }
-                for pair in payload.model_pairs
-            ]
-            
-            supabase.table("session").update({
-                "rubric_models": rubric_models,
-                "assessment_models": assessment_models,
-                "model_pairs": model_pairs_data,  # NEW: Save complete specifications
-                "default_tries": payload.default_tries or 1,
-            }).eq("id", payload.session_id).execute()
-        else:
-            model_names = [m.name for m in payload.models]
-            supabase.table("session").update({
-                "selected_models": model_names,
-                "default_tries": payload.default_tries or 1,
-            }).eq("id", payload.session_id).execute()
+        # Always use model pairs (the only supported flow)
+        rubric_models = [pair.rubric_model.name for pair in payload_model_pairs]
+        assessment_models = [pair.assessment_model.name for pair in payload_model_pairs]
+
+        # Serialize complete model pair specifications including reasoning configs
+        model_pairs_data = [
+            {
+                "rubricModel": pair.rubric_model.name,
+                "assessmentModel": pair.assessment_model.name,
+                "rubricReasoning": pair.rubric_model.reasoning if pair.rubric_model.reasoning else None,
+                "assessmentReasoning": pair.assessment_model.reasoning if pair.assessment_model.reasoning else None,
+                "instanceId": pair.instance_id if pair.instance_id else None,
+            }
+            for pair in payload_model_pairs
+        ]
+
+        supabase.table("session").update({
+            "rubric_models": rubric_models,
+            "assessment_models": assessment_models,
+            "model_pairs": model_pairs_data,  # Save complete specifications
+            "default_tries": payload.default_tries or 1,
+        }).eq("id", payload.session_id).execute()
     except Exception:
         # Non-fatal if this fails; continue with grading
         pass
@@ -1612,7 +1578,8 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
                                 rubric_reasoning,
                                 payload.session_id,
                                 try_index,
-                                instance_id
+                                instance_id,
+                                answer_key_urls=key_urls
                             )
                             if OPENROUTER_DEBUG:
                                 logging.info("✅ [PAIR %s] Try %s: Rubric extracted (%s chars)",
@@ -1663,44 +1630,11 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
                 asyncio.create_task(run_task(rub_m, ass_m, t, rub_r, ass_r, inst_id))
                 for rub_m, ass_m, t, rub_r, ass_r, inst_id in items
             ]
-        else:
-            # LEGACY: Single models flow
-            async def run_task(model: str, try_index: int, reasoning: Dict[str, Any] | None, instance_id: str | None):
-                async with semaphore:
-                    # Force Anthropic provider for Claude models
-                    adjusted_model = model
-                    if "claude" in model.lower():
-                        if not model.startswith("anthropic/"):
-                            adjusted_model = f"anthropic/{model}"
-                        adjusted_model = adjusted_model.replace("google/", "anthropic/")
-                        
-                        if OPENROUTER_DEBUG:
-                            logging.info("🔄 Adjusted model name from '%s' to '%s' to force Anthropic provider", model, adjusted_model)
-                    
-                    data = await _call_openrouter(
-                        client,
-                        adjusted_model,
-                        legacy_messages,
-                        reasoning,
-                        session_id=payload.session_id,
-                        try_index=try_index,
-                        instance_id=instance_id,
-                    )
-                    return model, try_index, data, instance_id
-            
-            # Create tasks for legacy single models
-            tasks = [
-                asyncio.create_task(run_task(model, t, reasoning, inst_id))
-                for model, _, t, reasoning, _, inst_id in items
-            ]
-        # Collect results - handle both legacy and new formats
-        if use_model_pairs:
-            # NEW format: (rubric_model, assessment_model, try_index, rubric_text, data, instance_id, error)
-            results: List[Tuple[str, str, int, str | None, Dict[str, Any] | None, str | None, str | None]] = []
-        else:
-            # LEGACY format: (model, try_index, data, instance_id)
-            results: List[Tuple[str, int, Dict[str, Any], str | None]] = []
-        
+
+        # Collect results - model pairs format
+        # NEW format: (rubric_model, assessment_model, try_index, rubric_text, data, instance_id, error)
+        results: List[Tuple[str, str, int, str | None, Dict[str, Any] | None, str | None, str | None]] = []
+
         gathered = await asyncio.gather(*tasks, return_exceptions=True)
         errors: List[Exception] = []
         
@@ -1753,13 +1687,28 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
             # Extract token usage from assessment response
             token_usage = _extract_token_usage(raw)
             if token_usage:
+                # DEBUG: Log assessment token usage extraction
+                if OPENROUTER_DEBUG:
+                    logging.info("💰 ASSESSMENT TOKEN USAGE DEBUG - %s (try %s):", model_identifier, try_index)
+                    logging.info("  Input: %d, Output: %d, Reasoning: %d, Total: %d",
+                               token_usage.get("input_tokens", 0),
+                               token_usage.get("output_tokens", 0),
+                               token_usage.get("reasoning_tokens", 0),
+                               token_usage.get("total_tokens", 0))
+                    logging.info("  Cache Creation: %d, Cache Read: %d, Cost: $%s",
+                               token_usage.get("cache_creation_input_tokens", 0),
+                               token_usage.get("cache_read_input_tokens", 0),
+                               token_usage.get("cost_estimate", 0))
+
                 token_usage_record = {
                     "session_id": payload.session_id,
                     "model_name": model_identifier,
                     "try_index": try_index,
+                    "phase": "assessment",  # NEW: Mark as assessment phase
                     "input_tokens": token_usage.get("input_tokens", 0),
                     "output_tokens": token_usage.get("output_tokens", 0),
                     "reasoning_tokens": token_usage.get("reasoning_tokens", 0),
+                    "total_tokens": token_usage.get("total_tokens", 0),  # FIX: Include total_tokens
                     "cache_creation_input_tokens": token_usage.get("cache_creation_input_tokens", 0),
                     "cache_read_input_tokens": token_usage.get("cache_read_input_tokens", 0),
                     "model_id": token_usage.get("model_id"),
@@ -1832,20 +1781,35 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
         if token_usage:
             # Use instance_id if available, otherwise use model name
             model_identifier = instance_id if instance_id else model
-            
+
+            # DEBUG: Log legacy flow token usage extraction
+            if OPENROUTER_DEBUG:
+                logging.info("💰 LEGACY TOKEN USAGE DEBUG - %s (try %s):", model_identifier, try_index)
+                logging.info("  Input: %d, Output: %d, Reasoning: %d, Total: %d",
+                           token_usage.get("input_tokens", 0),
+                           token_usage.get("output_tokens", 0),
+                           token_usage.get("reasoning_tokens", 0),
+                           token_usage.get("total_tokens", 0))
+                logging.info("  Cache Creation: %d, Cache Read: %d, Cost: $%s",
+                           token_usage.get("cache_creation_input_tokens", 0),
+                           token_usage.get("cache_read_input_tokens", 0),
+                           token_usage.get("cost_estimate", 0))
+
             token_usage_record = {
                 "session_id": payload.session_id,
                 "model_name": model_identifier,
                 "try_index": try_index,
+                "phase": "assessment",  # NEW: Mark as assessment phase (legacy flow)
                 "input_tokens": token_usage.get("input_tokens", 0),
                 "output_tokens": token_usage.get("output_tokens", 0),
                 "reasoning_tokens": token_usage.get("reasoning_tokens", 0),
+                "total_tokens": token_usage.get("total_tokens", 0),  # FIX: Include total_tokens
                 "cache_creation_input_tokens": token_usage.get("cache_creation_input_tokens", 0),
                 "cache_read_input_tokens": token_usage.get("cache_read_input_tokens", 0),
                 "model_id": token_usage.get("model_id"),
                 "finish_reason": token_usage.get("finish_reason"),
                 "cost_estimate": token_usage.get("cost_estimate"),
-                "metadata": {"raw_usage": raw.get("usage", {})},
+                "metadata": {"raw_usage": raw.get("usage", {}), "pair": {"rubric": rubric_model, "assessment": assessment_model}},  # FIX: Include model pair info
             }
             token_usage_records.append(token_usage_record)
             
@@ -2018,7 +1982,7 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
             # Insert token usage records
             supabase.table("token_usage").upsert(
                 token_usage_records,
-                on_conflict="session_id,model_name,try_index"
+                on_conflict="session_id,model_name,try_index,phase"
             ).execute()
             
             if OPENROUTER_DEBUG:
@@ -2042,3 +2006,44 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
         pass
 
     return GradeSingleRes(ok=True, session_id=payload.session_id)
+
+
+@router.get("/grade/tokens/{session_id}")
+def get_token_usage(session_id: str):
+    """Get token usage for both rubric and assessment phases"""
+    try:
+        # Get token usage for both phases
+        token_usage_res = supabase.table("token_usage").select("*").eq("session_id", session_id).execute()
+
+        if not token_usage_res.data:
+            return {"rubric": {}, "assessment": {}}
+
+        # Organize by phase, model, and attempt
+        token_usage_by_phase = {
+            "rubric": {},
+            "assessment": {}
+        }
+
+        for record in token_usage_res.data:
+            phase = record.get("phase", "assessment")
+            model_name = record.get("model_name", "unknown")
+            try_index = record.get("try_index", 0)
+
+            # Initialize model if not exists
+            if model_name not in token_usage_by_phase[phase]:
+                token_usage_by_phase[phase][model_name] = {}
+
+            # Store token usage for this attempt
+            token_usage_by_phase[phase][model_name][str(try_index)] = {
+                "input_tokens": record.get("input_tokens", 0),
+                "output_tokens": record.get("output_tokens", 0),
+                "reasoning_tokens": record.get("reasoning_tokens", 0),
+                "total_tokens": record.get("total_tokens", 0)
+            }
+
+        return token_usage_by_phase
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get token usage: {e}")
+
+

@@ -13,7 +13,7 @@ interface EnvConfig {
 
 export const Settings: React.FC = () => {
   // Tab state
-  const [activeTab, setActiveTab] = useState<'prompt' | 'rubric-prompt' | 'environment'>('prompt');
+  const [activeTab, setActiveTab] = useState<'rubric-prompt' | 'prompt' | 'environment'>('rubric-prompt');
   
   // Prompt settings state
   const [loading, setLoading] = useState(true);
@@ -400,17 +400,6 @@ export const Settings: React.FC = () => {
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex space-x-8">
           <button
-            onClick={() => setActiveTab('prompt')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
-              activeTab === 'prompt'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            LLM Prompt Settings
-            </button>
-            <button
           onClick={() => setActiveTab('rubric-prompt')}
           className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
             activeTab === 'rubric-prompt'
@@ -419,8 +408,20 @@ export const Settings: React.FC = () => {
           }`}
         >
           <FileText className="w-4 h-4" />
-          Rubric Prompt Settings
+          Create Grading Criteria Settings
         </button>
+          <button
+            onClick={() => setActiveTab('prompt')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+              activeTab === 'prompt'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            Grade Assessment Settings
+            </button>
+            
         {isTauri() && (
             <button
               onClick={() => setActiveTab('environment')}
@@ -501,7 +502,6 @@ export const Settings: React.FC = () => {
                 className="w-full min-h-[200px] rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 p-3 font-mono text-sm bg-white"
                 placeholder="Enter the system template..."
               />
-              <p className="text-xs text-slate-500">Supported placeholders: [Answer key], [Question list], [Response schema]</p>
             </div>
 
             <div className="space-y-2">
@@ -512,7 +512,7 @@ export const Settings: React.FC = () => {
                 className="w-full min-h-[150px] rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 p-3 font-mono text-sm bg-white"
                 placeholder="Enter the user template..."
               />
-              <p className="text-xs text-slate-500">Supported placeholders: [Student assessment]</p>
+              <p className="text-xs text-slate-500">Supported placeholders: [Student assessment], [Answer key], [Response schema], [Grading criteria]</p>
             </div>
 
             <div className="space-y-2">
@@ -616,25 +616,24 @@ export const Settings: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-slate-700">Rubric System Template</label>
+              <label className="block text-sm font-medium text-slate-700">System Template</label>
               <textarea
                 value={rubricSystemTemplate}
                 onChange={(e) => setRubricSystemTemplate(e.target.value)}
                 className="w-full min-h-[200px] rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 p-3 font-mono text-sm bg-white"
                 placeholder="Enter the system template for rubric analysis..."
               />
-              <p className="text-xs text-slate-500">Supported placeholders: [Grading rubric images], [Question list]</p>
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-medium text-slate-700">Rubric User Template</label>
+              <label className="block text-sm font-medium text-slate-700">User Template</label>
               <textarea
                 value={rubricUserTemplate}
                 onChange={(e) => setRubricUserTemplate(e.target.value)}
                 className="w-full min-h-[150px] rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 p-3 font-mono text-sm bg-white"
                 placeholder="Enter the user template for rubric analysis..."
               />
-              <p className="text-xs text-slate-500">The instructions for analyzing the rubric images</p>
+              <p className="text-xs text-slate-500">Supported placeholders: [First student's assessment], [Question list], [Answer key]</p>
             </div>
 
             <div className="flex items-center gap-3">
@@ -643,7 +642,7 @@ export const Settings: React.FC = () => {
                 disabled={rubricSaving}
                 className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
               >
-                {rubricSaving ? 'Saving…' : 'Save Rubric Settings'}
+                {rubricSaving ? 'Saving…' : 'Save Prompt Settings'}
               </button>
               <button
                 type="button"

@@ -7,12 +7,13 @@ import { getRubricResults } from '../utils/api';  // NEW: Import rubric results 
 export const Review: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { getAssessment, loadAssessmentResults } = useAssessments();
+  const { getAssessment, loadAssessmentResults, loadTokenUsage } = useAssessments();
   const [activeTab, setActiveTab] = useState<'results' | 'questions'>('results');
   const [questionTab, setQuestionTab] = useState<'both' | 'rubric' | 'feedback'>('both');  // NEW: Sub-tabs for questions
   const [selectedQuestion, setSelectedQuestion] = useState<string>('');
   const [isLoadingResults, setIsLoadingResults] = useState<boolean>(false);
   const [rubricResults, setRubricResults] = useState<any>(null);  // NEW: Store rubric results
+  const [tokenUsage, setTokenUsage] = useState<any>(null);  // NEW: Store token usage data
   const [hoveredAttempt, setHoveredAttempt] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<'above' | 'below'>('below');
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -204,6 +205,24 @@ export const Review: React.FC = () => {
     }
   }, [assessment?.status, assessment?.results, id]);
 
+  // NEW: Fetch token usage data when assessment is complete and has results
+  useEffect(() => {
+    if (assessment && assessment.status === 'complete' && assessment.results && id) {
+      if (!tokenUsage) {
+        console.log('[Review] Fetching token usage for session:', id);
+        loadTokenUsage(id)
+          .then(data => {
+            console.log('[Review] Token usage loaded:', data);
+            setTokenUsage(data);
+          })
+          .catch(err => {
+            console.error('[Review] Failed to load token usage:', err);
+            // Non-fatal error, continue without token data
+          });
+      }
+    }
+  }, [assessment?.status, assessment?.results, id, loadTokenUsage]);
+
   if (!assessment) {
     return (
       <div className="text-center py-20">
@@ -276,6 +295,17 @@ export const Review: React.FC = () => {
     const num = Math.round(numRaw);
     const pct = (numRaw / den) * 100;
     return `${num}/${den} (${pct.toFixed(2)}%)`;
+  };
+
+  // Helper function to get token usage for a specific attempt
+  const getTokenUsageForAttempt = (model: string, attemptNumber: number, phase: 'rubric' | 'assessment') => {
+    if (!tokenUsage || !tokenUsage[phase]) return null;
+
+    // Try to find the model in the token usage data
+    const modelTokens = tokenUsage[phase][model] || tokenUsage[phase][`${model}_${attemptNumber}`];
+    if (!modelTokens) return null;
+
+    return modelTokens[String(attemptNumber)];
   };
 
   // Helper: Extract grading criteria for a specific question from full rubric response
@@ -541,47 +571,110 @@ export const Review: React.FC = () => {
                                 >
                                   <Info className="w-4 h-4 text-slate-400 hover:text-slate-600 cursor-help" />
                                   {hoveredAttempt === attemptKey && (
-                                    <div 
+                                    <div
                                       ref={tooltipRef}
-                                      className={`absolute left-6 z-50 bg-slate-900 text-white p-3 rounded-lg shadow-xl min-w-[200px] text-xs ${
-                                        tooltipPosition === 'above' 
-                                          ? 'bottom-6' 
+                                      className={`absolute left-6 z-50 bg-slate-900 text-white p-3 rounded-lg shadow-xl text-xs ${
+                                        tooltipPosition === 'above'
+                                          ? 'bottom-6'
                                           : 'top-0'
                                       }`}
                                       style={{
-                                        maxHeight: '80vh',
-                                        overflowY: 'auto'
+                                        minWidth: '340px',
+                                        maxWidth: '420px',
+                                        maxHeight: '280px',
+                                        overflow: 'hidden'
                                       }}
                                     >
                                       <div className="font-semibold mb-2 border-b border-slate-700 pb-1">Token Usage</div>
-                                      <div className="space-y-1">
-                                        {attempt.tokenUsage.input_tokens && (
-                                          <div className="flex justify-between">
-                                            <span className="text-slate-300">Input:</span>
-                                            <span className="font-mono">{attempt.tokenUsage.input_tokens.toLocaleString()}</span>
+
+                                      {/* Two-column layout: Grading Criteria (Left) | Assessment (Right) */}
+                                      <div className="flex gap-4">
+                                        {/* Grading Criteria (Rubric) tokens - Left Column */}
+                                        <div className="flex-1">
+                                          <div className="text-xs font-semibold text-blue-300 mb-2">Grading Criteria</div>
+                                          <div className="space-y-1">
+                                            {(() => {
+                                              const rubricTokens = getTokenUsageForAttempt(modelResult.model, attempt.attemptNumber, 'rubric');
+                                              if (!rubricTokens) {
+                                                return <div className="text-xs text-slate-400">No rubric tokens</div>;
+                                              }
+                                              return (
+                                                <>
+                                                  <div className="flex justify-between text-xs">
+                                                    <span className="text-slate-400">Input:</span>
+                                                    <span className="font-mono">{rubricTokens.input_tokens.toLocaleString()}</span>
+                                                  </div>
+                                                  <div className="flex justify-between text-xs">
+                                                    <span className="text-slate-400">Output:</span>
+                                                    <span className="font-mono">{rubricTokens.output_tokens.toLocaleString()}</span>
+                                                  </div>
+                                                  {rubricTokens.reasoning_tokens > 0 && (
+                                                    <div className="flex justify-between text-xs">
+                                                      <span className="text-slate-400">Reasoning:</span>
+                                                      <span className="font-mono">{rubricTokens.reasoning_tokens.toLocaleString()}</span>
+                                                    </div>
+                                                  )}
+                                                  <div className="flex justify-between text-xs font-semibold text-blue-200 pt-1 border-t border-slate-700">
+                                                    <span>Total:</span>
+                                                    <span className="font-mono">{rubricTokens.total_tokens.toLocaleString()}</span>
+                                                  </div>
+                                                </>
+                                              );
+                                            })()}
                                           </div>
-                                        )}
-                                        {attempt.tokenUsage.output_tokens && (
-                                          <div className="flex justify-between">
-                                            <span className="text-slate-300">Output:</span>
-                                            <span className="font-mono">{attempt.tokenUsage.output_tokens.toLocaleString()}</span>
+                                        </div>
+
+                                        {/* Assessment tokens - Right Column */}
+                                        <div className="flex-1">
+                                          <div className="text-xs font-semibold text-green-300 mb-2">Assessment</div>
+                                          <div className="space-y-1">
+                                            {attempt.tokenUsage && (
+                                              <>
+                                                <div className="flex justify-between text-xs">
+                                                  <span className="text-slate-400">Input:</span>
+                                                  <span className="font-mono">{attempt.tokenUsage.input_tokens.toLocaleString()}</span>
+                                                </div>
+                                                <div className="flex justify-between text-xs">
+                                                  <span className="text-slate-400">Output:</span>
+                                                  <span className="font-mono">{attempt.tokenUsage.output_tokens.toLocaleString()}</span>
+                                                </div>
+                                                {attempt.tokenUsage.reasoning_tokens > 0 && (
+                                                  <div className="flex justify-between text-xs">
+                                                    <span className="text-slate-400">Reasoning:</span>
+                                                    <span className="font-mono">{attempt.tokenUsage.reasoning_tokens.toLocaleString()}</span>
+                                                  </div>
+                                                )}
+                                                <div className="flex justify-between text-xs font-semibold text-green-200 pt-1 border-t border-slate-700">
+                                                  <span>Total:</span>
+                                                  <span className="font-mono">{attempt.tokenUsage.total_tokens.toLocaleString()}</span>
+                                                </div>
+                                              </>
+                                            ) || (
+                                              <div className="text-xs text-slate-400">No assessment tokens</div>
+                                            )}
                                           </div>
-                                        )}
-                                        {attempt.tokenUsage.reasoning_tokens !== undefined && (
-                                          <div className="flex justify-between">
-                                            <span className="text-slate-300">Reasoning:</span>
-                                            <span className="font-mono">{attempt.tokenUsage.reasoning_tokens.toLocaleString()}</span>
-                                          </div>
-                                        )}
-                                        {attempt.tokenUsage.total_tokens && (
-                                          <div className="flex justify-between pt-1 border-t border-slate-700 mt-1 font-semibold">
-                                            <span>Total:</span>
-                                            <span className="font-mono">{attempt.tokenUsage.total_tokens.toLocaleString()}</span>
-                                          </div>
-                                        )}
+                                        </div>
                                       </div>
+
+                                      {/* Combined total - Full width below columns */}
+                                      <div className="pt-2 mt-2 border-t border-slate-600">
+                                        <div className="flex justify-between text-xs font-bold text-white">
+                                          <span>Combined Total:</span>
+                                          <span className="font-mono">
+                                            {(() => {
+                                              const rubricTokens = getTokenUsageForAttempt(modelResult.model, attempt.attemptNumber, 'rubric');
+                                              const assessmentTokens = attempt.tokenUsage;
+                                              const rubricTotal = rubricTokens?.total_tokens || 0;
+                                              const assessmentTotal = assessmentTokens?.total_tokens || 0;
+                                              const combinedTotal = rubricTotal + assessmentTotal;
+                                              return combinedTotal.toLocaleString();
+                                            })()}
+                                          </span>
+                                        </div>
+                                      </div>
+
                                       {/* Arrow pointer - adjusts based on position */}
-                                      <div 
+                                      <div
                                         className={`absolute w-0 h-0 border-solid ${
                                           tooltipPosition === 'above'
                                             ? 'top-full left-2 border-t-[6px] border-t-slate-900 border-x-[6px] border-x-transparent'
@@ -656,7 +749,7 @@ export const Review: React.FC = () => {
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                   >
-                    Both (Rubric + Feedback)
+                    Both (Criteria + Feedback)
                   </button>
                   <button
                     onClick={() => setQuestionTab('rubric')}
@@ -666,7 +759,7 @@ export const Review: React.FC = () => {
                         : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                     }`}
                   >
-                    Grading Rubric Only
+                    Criteria Only
                   </button>
                   <button
                     onClick={() => setQuestionTab('feedback')}

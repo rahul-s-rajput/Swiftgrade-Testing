@@ -19,7 +19,7 @@ You must:
 3. Format the final output as a single JSON object following the exact response schema
 
 ## Response Schema
-[RESPONSE SCHEMA PLACEHOLDER]
+[Response Schema]
 
 ## Internal Checklist
 <internal_checklist>

@@ -133,6 +133,24 @@ export async function sleep(ms: number) { return new Promise(res => setTimeout(r
 export interface SessionCreateRes { session_id: string; status: string }
 export const createSession = (name?: string) => postJSON<SessionCreateRes>('/sessions', name ? { name } : {});
 
+export interface TemplateRes {
+  name: string;
+  model_pairs: any[];
+  default_tries: number;
+  questions: Array<{ question_id: string; max_mark: number }>;
+  human_grades: Record<string, number>;
+  images: {
+    student_images: string[];
+    answer_key_images: string[];
+    rubric_images: string[];
+  };
+  templates: {
+    rubric: string;
+    assessment: string;
+  };
+}
+export const getTemplate = (session_id: string) => getJSON<TemplateRes>(`/sessions/${session_id}/template`);
+
 export interface SignedUrlRes {
   uploadUrl: string;
   token?: string | null;
@@ -359,6 +377,12 @@ export const getSessions = () => {
 };
 
 export const deleteSession = (session_id: string) => del(`/sessions/${session_id}`);
+
+export const updateSession = (session_id: string, data: { name?: string }) =>
+  putJSON<{ message: string; updated_fields: string[] }>(`/sessions/${session_id}`, data);
+
+export const getTokenUsage = (session_id: string) =>
+  getJSON<{ rubric: Record<string, Record<string, { input_tokens: number; output_tokens: number; reasoning_tokens: number; total_tokens: number }>>; assessment: Record<string, Record<string, { input_tokens: number; output_tokens: number; reasoning_tokens: number; total_tokens: number }>> }>(`/grade/tokens/${session_id}`);
 
 // Debug function to test current API base
 export const debugApiBase = () => {

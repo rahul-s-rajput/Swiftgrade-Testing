@@ -11,7 +11,7 @@ import { getTemplates, Template } from '../utils/api';
 
 export const NewAssessment: React.FC = () => {
   const navigate = useNavigate();
-  const { addAssessment } = useAssessments();
+  const { addAssessment, loadTemplateData } = useAssessments();
   const { models, loading: modelsLoading, error: modelsError, refetch: refetchModels, modelInfoById } = useOpenRouterModels();
 
   const imageModels = useMemo(() =>
@@ -35,6 +35,7 @@ export const NewAssessment: React.FC = () => {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
 
   const [rubricReasoningBySelection, setRubricReasoningBySelection] = useState<Array<{ level: ReasoningLevel; tokens?: number }>>([]);
   const [assessmentReasoningBySelection, setAssessmentReasoningBySelection] = useState<Array<{ level: ReasoningLevel; tokens?: number }>>([]);
@@ -90,7 +91,7 @@ export const NewAssessment: React.FC = () => {
         ]);
         setRubricTemplates(rubricRes.templates);
         setAssessmentTemplates(assessmentRes.templates);
-        
+
         // Auto-select default template
         setSelectedRubricTemplate('default');
         setSelectedAssessmentTemplate('default');
@@ -100,6 +101,111 @@ export const NewAssessment: React.FC = () => {
     };
     loadTemplates();
   }, []);
+
+  // Load template data from URL parameter
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const templateSessionId = urlParams.get('template');
+
+    if (templateSessionId) {
+      const loadAssessmentTemplate = async () => {
+        setIsLoadingTemplate(true);
+        try {
+          const templateData = await loadTemplateData(templateSessionId);
+          console.log('[NewAssessment] Loading template data:', templateData);
+
+          // Update form with template data
+          setFormData(prev => ({
+            ...prev,
+            name: `${templateData.name} (Template)`,
+            questions: JSON.stringify(templateData.questions.map(q => ({
+              question_number: q.question_id,
+              max_mark: q.max_mark
+            })), null, 2),
+            humanGrades: JSON.stringify(templateData.human_grades || {}, null, 2),
+            iterations: templateData.default_tries
+          }));
+
+          // Load images from URLs
+          const loadImagesFromUrls = async (urls: string[]): Promise<File[]> => {
+            const files: File[] = [];
+            for (const url of urls) {
+              try {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                const fileName = url.split('/').pop() || 'image.jpg';
+                const file = new File([blob], fileName, { type: blob.type });
+                files.push(file);
+              } catch (e) {
+                console.warn('Failed to load image from URL:', url, e);
+              }
+            }
+            return files;
+          };
+
+          // Load template images
+          if (templateData.images) {
+            const [studentFiles, answerKeyFiles, rubricFiles] = await Promise.all([
+              loadImagesFromUrls(templateData.images.student_images || []),
+              loadImagesFromUrls(templateData.images.answer_key_images || []),
+              loadImagesFromUrls(templateData.images.rubric_images || [])
+            ]);
+
+            setFormData(prev => ({
+              ...prev,
+              studentImages: studentFiles,
+              answerKeyImages: answerKeyFiles,
+              rubricImages: rubricFiles
+            }));
+          }
+
+          // Set model pairs from template
+          if (templateData.model_pairs && templateData.model_pairs.length > 0) {
+            const rubricModelNames = templateData.model_pairs.map((pair: any) => pair.rubricModel);
+            const assessmentModelNames = templateData.model_pairs.map((pair: any) => pair.assessmentModel);
+
+            setRubricModels(rubricModelNames);
+            setAssessmentModels(assessmentModelNames);
+
+            // Set reasoning configurations
+            const rubricReasoning = templateData.model_pairs.map((pair: any) => {
+              const reasoning = pair.rubricReasoning;
+              if (reasoning?.effort) return { level: reasoning.effort as ReasoningLevel };
+              if (reasoning?.exclude) return { level: 'none' as ReasoningLevel };
+              return { level: 'none' as ReasoningLevel };
+            });
+
+            const assessmentReasoning = templateData.model_pairs.map((pair: any) => {
+              const reasoning = pair.assessmentReasoning;
+              if (reasoning?.effort) return { level: reasoning.effort as ReasoningLevel };
+              if (reasoning?.exclude) return { level: 'none' as ReasoningLevel };
+              return { level: 'none' as ReasoningLevel };
+            });
+
+            setRubricReasoningBySelection(rubricReasoning);
+            setAssessmentReasoningBySelection(assessmentReasoning);
+          }
+
+          // Set prompt templates
+          if (templateData.templates?.rubric) {
+            setSelectedRubricTemplate(templateData.templates.rubric);
+          }
+          if (templateData.templates?.assessment) {
+            setSelectedAssessmentTemplate(templateData.templates.assessment);
+          }
+
+          console.log('[NewAssessment] Template loaded successfully');
+        } catch (e) {
+          console.error('Failed to load template:', e);
+          // Optionally show error to user
+        } finally {
+          setIsLoadingTemplate(false);
+        }
+      };
+
+      loadAssessmentTemplate();
+    }
+  }, [loadTemplateData]);
 
   // Create model pairs from independent selections
   const modelPairs = useMemo(() => {
@@ -209,6 +315,15 @@ export const NewAssessment: React.FC = () => {
           <ArrowLeft className="w-5 h-5 mr-2" />
           Back to Dashboard
         </button>
+
+        {/* Template Loading Indicator */}
+        {isLoadingTemplate && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-center">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-3"></div>
+            <span className="text-blue-700 font-medium">Loading template data...</span>
+          </div>
+        )}
+
         <div className="text-center">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-2xl mb-6 shadow-lg">
             <Sparkles className="w-8 h-8 text-white" />
@@ -252,10 +367,18 @@ export const NewAssessment: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Left Column */}
             <div className="space-y-8">
+              {/* Rubric Images */}
+              <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6">
+                <FileUpload
+                  label="Upload First Student's Images (For GC Creation)"
+                  files={formData.rubricImages}
+                  onChange={(files) => setFormData({ ...formData, rubricImages: files })}
+                />
+              </div>
               {/* Student Test Images */}
               <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6">
                 <FileUpload
-                  label="Upload Student Test Images"
+                  label="Upload Student Images (For Grading)"
                   files={formData.studentImages}
                   onChange={(files) => setFormData({ ...formData, studentImages: files })}
                 />
@@ -267,17 +390,7 @@ export const NewAssessment: React.FC = () => {
                 )}
               </div>
 
-              {/* Rubric Images */}
-              <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6">
-                <FileUpload
-                  label="Upload Grading Rubric Images"
-                  files={formData.rubricImages}
-                  onChange={(files) => setFormData({ ...formData, rubricImages: files })}
-                />
-                <p className="text-xs text-slate-500 mt-2">
-                  Upload images of the grading rubric that will guide the AI assessment
-                </p>
-              </div>
+              
 
               {/* Questions */}
               <div>
@@ -362,13 +475,13 @@ export const NewAssessment: React.FC = () => {
               Prompt Templates
             </h3>
             <p className="text-sm text-slate-600 mb-4">
-              Select which prompt templates to use for rubric analysis and assessment grading.
+              Select which prompt templates to use for grading criteria creation and assessment grading.
             </p>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Rubric Template */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Rubric Template
+                  Grading Criteria Creation Template
                 </label>
                 <select
                   value={selectedRubricTemplate}
@@ -382,14 +495,14 @@ export const NewAssessment: React.FC = () => {
                   ))}
                 </select>
                 <p className="text-xs text-slate-500 mt-1">
-                  Template for analyzing grading rubric images
+                  Template for creating grading criteria
                 </p>
               </div>
 
               {/* Assessment Template */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Assessment Template
+                  Assessment Grading Template
                 </label>
                 <select
                   value={selectedAssessmentTemplate}
@@ -403,7 +516,7 @@ export const NewAssessment: React.FC = () => {
                   ))}
                 </select>
                 <p className="text-xs text-slate-500 mt-1">
-                  Template for grading student assessments
+                  Template for grading an assessment
                 </p>
               </div>
             </div>
@@ -414,11 +527,8 @@ export const NewAssessment: React.FC = () => {
             {/* Rubric Model Selector */}
             <div ref={rubricContainerRef} className="relative bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6">
               <label className="block text-sm font-semibold text-slate-700 mb-3">
-                Select Grading Rubric Models
+                Select Grading Criteria Creation Model
               </label>
-              <p className="text-xs text-slate-500 mb-3">
-                These models will analyze the grading rubric images first
-              </p>
               {modelsLoading ? (
                 <div className="flex items-center text-slate-600">
                   <Upload className="w-4 h-4 mr-2 animate-spin" />
@@ -444,7 +554,7 @@ export const NewAssessment: React.FC = () => {
                   options={imageModels}
                   selectedValues={rubricModels}
                   onChange={setRubricModels}
-                  placeholder="Choose rubric analysis models..."
+                  placeholder="Choose grading criteria creation model..."
                   dropdownPlacement="top"
                   renderOptionMeta={renderOptionMeta}
                   allowDuplicates
@@ -523,11 +633,8 @@ export const NewAssessment: React.FC = () => {
             {/* Assessment Model Selector */}
             <div ref={assessmentContainerRef} className="relative bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6">
               <label className="block text-sm font-semibold text-slate-700 mb-3">
-                Select Assessment Models
+                Select Assessment Grading Model
               </label>
-              <p className="text-xs text-slate-500 mb-3">
-                These models will grade using the rubric from paired models (left side)
-              </p>
               {modelsLoading ? (
                 <div className="flex items-center text-slate-600">
                   <Upload className="w-4 h-4 mr-2 animate-spin" />
@@ -546,7 +653,7 @@ export const NewAssessment: React.FC = () => {
                   options={imageModels}
                   selectedValues={assessmentModels}
                   onChange={setAssessmentModels}
-                  placeholder="Choose assessment models..."
+                  placeholder="Choose assessment grading model..."
                   dropdownPlacement="top"
                   renderOptionMeta={renderOptionMeta}
                   allowDuplicates

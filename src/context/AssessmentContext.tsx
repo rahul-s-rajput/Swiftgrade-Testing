@@ -13,12 +13,16 @@ import {
   getQuestions,
   getSessions,
   deleteSession,
+  getTemplate,
+  updateSession,
+  getTokenUsage,
   type ResultsRes,
   type ResultsErrorsRes,
   type StatsRes,
   type QuestionConfigQuestion,
   type QuestionsRes,
   type ResultItem,
+  type TemplateRes,
 } from '../utils/api';
 
 interface AssessmentContextType {
@@ -30,6 +34,9 @@ interface AssessmentContextType {
   retryAssessment: (id: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
   loadAssessmentResults: (id: string) => Promise<void>;
+  loadTemplateData: (sessionId: string) => Promise<any>;
+  renameAssessment: (id: string, newName: string) => Promise<void>;
+  loadTokenUsage: (sessionId: string) => Promise<any>;
   loading: boolean;
 }
 
@@ -892,11 +899,11 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         a.selectedModels,
         a.reasoningBySelection
       );
-      
+
       await gradeSingleWithRetry(
-        id, 
-        a.selectedModels, 
-        a.iterations, 
+        id,
+        a.selectedModels,
+        a.iterations,
         reasoningConfig,
         a.reasoningBySelection  // Pass per-model reasoning
       );
@@ -909,6 +916,52 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [assessments, updateAssessmentStatus, refreshSessions, loadAssessmentResults]);
 
+  const loadTemplateData = useCallback(async (sessionId: string): Promise<TemplateRes> => {
+    try {
+      const templateData = await getTemplate(sessionId);
+      console.log('[AssessmentContext] Loaded template data:', templateData);
+      return templateData;
+    } catch (e) {
+      console.error('Failed to load template data:', e);
+      throw e;
+    }
+  }, []);
+
+  const renameAssessment = useCallback(async (id: string, newName: string) => {
+    try {
+      // Optimistic update
+      setAssessments(prev =>
+        prev.map(assessment =>
+          assessment.id === id ? { ...assessment, name: newName } : assessment
+        )
+      );
+
+      // Update backend
+      await updateSession(id, { name: newName });
+
+      // Refresh sessions to ensure consistency
+      await refreshSessions();
+
+      console.log('[AssessmentContext] Successfully renamed assessment:', id, 'to:', newName);
+    } catch (e) {
+      console.error('Failed to rename assessment:', e);
+      // Revert optimistic update on error
+      await refreshSessions();
+      throw e;
+    }
+  }, [refreshSessions]);
+
+  const loadTokenUsage = useCallback(async (sessionId: string) => {
+    try {
+      const tokenUsageData = await getTokenUsage(sessionId);
+      console.log('[AssessmentContext] Loaded token usage data:', tokenUsageData);
+      return tokenUsageData;
+    } catch (e) {
+      console.error('Failed to load token usage data:', e);
+      throw e;
+    }
+  }, []);
+
   return (
     <AssessmentContext.Provider value={{
       assessments,
@@ -919,6 +972,9 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       refreshSessions,
       retryAssessment,
       loadAssessmentResults,
+      loadTemplateData,
+      renameAssessment,
+      loadTokenUsage,
       loading,
     }}>
       {children}

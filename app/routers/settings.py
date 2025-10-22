@@ -53,10 +53,10 @@ Here are the answer key pages. Use these to determine correct answers:
 [Answer key]
 </Answer_Key>
 
-<Grading_Rubric>
-Here is the detailed grading rubric extracted from the rubric images (JSON format):
-[Grading Rubric]
-</Grading_Rubric>
+<Grading_Criteria>
+Here is the detailed grading criteria extracted from the rubric images (JSON format):
+[Grading criteria]
+</Grading_Criteria>
 
 <Question_List>
 Here are the specific questions to grade:
@@ -152,11 +152,11 @@ CRITICAL RULES:
 
 DEFAULT_RUBRIC_USER_TEMPLATE = (
     """
-<Grading_Rubric_Images>
-[Grading rubric images]
-</Grading_Rubric_Images>
+<First_Student_Assessment>
+[First student's assessment]
+</First_Student_Assessment>
 
-Please analyze the grading rubric images above and extract all grading criteria for each question in the Question_List.
+Please analyze the first student's assessment images above and extract all grading criteria for each question in the Question_List.
 
 Return your analysis as valid JSON following the exact structure specified in the system message.
 
