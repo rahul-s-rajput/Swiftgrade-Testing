@@ -15,9 +15,12 @@ export const Review: React.FC = () => {
   const [rubricResults, setRubricResults] = useState<any>(null);  // NEW: Store rubric results
   const [tokenUsage, setTokenUsage] = useState<any>(null);  // NEW: Store token usage data
   const [hoveredAttempt, setHoveredAttempt] = useState<string | null>(null);
+  const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<'above' | 'below'>('below');
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const modelTooltipRef = useRef<HTMLDivElement>(null);
   const iconRef = useRef<HTMLDivElement>(null);
+  const modelIconRef = useRef<HTMLDivElement>(null);
 
   const assessment = id ? getAssessment(id) : null;
 
@@ -308,6 +311,64 @@ export const Review: React.FC = () => {
     return modelTokens[String(attemptNumber)];
   };
 
+  // Helper function to calculate average token usage for a model pair
+  const getAverageTokenUsage = (model: string) => {
+    if (!tokenUsage) return null;
+
+    let totalRubric = { input: 0, output: 0, reasoning: 0, total: 0, count: 0 };
+    let totalAssessment = { input: 0, output: 0, reasoning: 0, total: 0, count: 0 };
+
+    // Calculate rubric averages
+    if (tokenUsage.rubric && tokenUsage.rubric[model]) {
+      const rubricAttempts = Object.values(tokenUsage.rubric[model]);
+      rubricAttempts.forEach((attempt: any) => {
+        totalRubric.input += attempt.input_tokens || 0;
+        totalRubric.output += attempt.output_tokens || 0;
+        totalRubric.reasoning += attempt.reasoning_tokens || 0;
+        totalRubric.total += attempt.total_tokens || 0;
+        totalRubric.count++;
+      });
+    }
+
+    // Calculate assessment averages
+    if (tokenUsage.assessment && tokenUsage.assessment[model]) {
+      const assessmentAttempts = Object.values(tokenUsage.assessment[model]);
+      assessmentAttempts.forEach((attempt: any) => {
+        totalAssessment.input += attempt.input_tokens || 0;
+        totalAssessment.output += attempt.output_tokens || 0;
+        totalAssessment.reasoning += attempt.reasoning_tokens || 0;
+        totalAssessment.total += attempt.total_tokens || 0;
+        totalAssessment.count++;
+      });
+    }
+
+    // Calculate averages
+    const avgRubric = totalRubric.count > 0 ? {
+      input: Math.round(totalRubric.input / totalRubric.count),
+      output: Math.round(totalRubric.output / totalRubric.count),
+      reasoning: Math.round(totalRubric.reasoning / totalRubric.count),
+      total: Math.round(totalRubric.total / totalRubric.count),
+    } : null;
+
+    const avgAssessment = totalAssessment.count > 0 ? {
+      input: Math.round(totalAssessment.input / totalAssessment.count),
+      output: Math.round(totalAssessment.output / totalAssessment.count),
+      reasoning: Math.round(totalAssessment.reasoning / totalAssessment.count),
+      total: Math.round(totalAssessment.total / totalAssessment.count),
+    } : null;
+
+    return {
+      rubric: avgRubric,
+      assessment: avgAssessment,
+      combined: avgRubric && avgAssessment ? {
+        input: avgRubric.input + avgAssessment.input,
+        output: avgRubric.output + avgAssessment.output,
+        reasoning: avgRubric.reasoning + avgAssessment.reasoning,
+        total: avgRubric.total + avgAssessment.total,
+      } : null
+    };
+  };
+
   // Helper: Extract grading criteria for a specific question from full rubric response
   const extractQuestionCriteria = (rubricResponse: string, questionId: string): any | null => {
     try {
@@ -499,9 +560,159 @@ export const Review: React.FC = () => {
                         <td className="px-6 py-4 font-bold text-slate-900">
                           <div className="flex items-center">
                             <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full mr-3"></div>
-                            {modelResult.rubricModel && modelResult.assessmentModel
-                              ? formatModelPairLabel(modelResult.rubricModel, modelResult.assessmentModel, modelResult.model)
-                              : formatModelLabel(modelResult.model)} (Average)
+                            <div className="flex items-center gap-2">
+                              <span>
+                                {modelResult.rubricModel && modelResult.assessmentModel
+                                  ? formatModelPairLabel(modelResult.rubricModel, modelResult.assessmentModel, modelResult.model)
+                                  : formatModelLabel(modelResult.model)} (Average)
+                              </span>
+                              {/* Token usage icon with tooltip */}
+                              {tokenUsage && (
+                                <div
+                                  ref={modelIconRef}
+                                  className="relative inline-flex items-center"
+                                  onMouseEnter={(e) => {
+                                    setHoveredModel(modelResult.model);
+                                    // Check if tooltip would go off-screen
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const spaceBelow = window.innerHeight - rect.bottom;
+                                    const tooltipHeight = 200; // Approximate height of tooltip
+
+                                    if (spaceBelow < tooltipHeight) {
+                                      setTooltipPosition('above');
+                                    } else {
+                                      setTooltipPosition('below');
+                                    }
+                                  }}
+                                  onMouseLeave={() => {
+                                    setHoveredModel(null);
+                                    setTooltipPosition('below');
+                                  }}
+                                >
+                                  <Info className="w-4 h-4 text-slate-400 hover:text-slate-600 cursor-help" />
+
+                                  {hoveredModel === modelResult.model && (
+                                    <div
+                                      ref={modelTooltipRef}
+                                      className={`absolute left-6 z-50 bg-slate-900 text-white p-3 rounded-lg shadow-xl text-xs ${
+                                        tooltipPosition === 'above'
+                                          ? 'bottom-6'
+                                          : 'top-0'
+                                      }`}
+                                      style={{
+                                        minWidth: '340px',
+                                        maxWidth: '420px',
+                                        maxHeight: '200px',
+                                        overflow: 'auto'
+                                      }}
+                                    >
+                                      <div className="font-semibold mb-1 border-b border-slate-700 pb-1">Average Token Usage</div>
+
+                                      {/* Two-column layout: Grading Criteria (Left) | Assessment (Right) */}
+                                      <div className="flex gap-3">
+                                        {/* Grading Criteria (Rubric) tokens - Left Column */}
+                                        <div className="flex-1">
+                                          <div className="text-xs font-semibold text-blue-300 mb-1">Grading Criteria</div>
+                                          <div className="space-y-0.5">
+                                            {(() => {
+                                              const avgTokens = getAverageTokenUsage(modelResult.model);
+                                              const rubricAvg = avgTokens?.rubric;
+                                              if (!rubricAvg) {
+                                                return <div className="text-xs text-slate-400">No data</div>;
+                                              }
+                                              return (
+                                                <>
+                                                  <div className="flex justify-between text-xs">
+                                                    <span className="text-slate-400">Input:</span>
+                                                    <span className="font-mono">{rubricAvg.input.toLocaleString()}</span>
+                                                  </div>
+                                                  <div className="flex justify-between text-xs">
+                                                    <span className="text-slate-400">Output:</span>
+                                                    <span className="font-mono">{rubricAvg.output.toLocaleString()}</span>
+                                                  </div>
+                                                  {rubricAvg.reasoning > 0 && (
+                                                    <div className="flex justify-between text-xs">
+                                                      <span className="text-slate-400">Reasoning:</span>
+                                                      <span className="font-mono">{rubricAvg.reasoning.toLocaleString()}</span>
+                                                    </div>
+                                                  )}
+                                                  <div className="flex justify-between text-xs font-semibold text-blue-200 pt-1 border-t border-slate-700">
+                                                    <span>Avg Total:</span>
+                                                    <span className="font-mono">{rubricAvg.total.toLocaleString()}</span>
+                                                  </div>
+                                                </>
+                                              );
+                                            })()}
+                                          </div>
+                                        </div>
+
+                                        {/* Assessment tokens - Right Column */}
+                                        <div className="flex-1">
+                                          <div className="text-xs font-semibold text-green-300 mb-1">Assessment</div>
+                                          <div className="space-y-0.5">
+                                            {(() => {
+                                              const avgTokens = getAverageTokenUsage(modelResult.model);
+                                              const assessmentAvg = avgTokens?.assessment;
+                                              if (!assessmentAvg) {
+                                                return <div className="text-xs text-slate-400">No data</div>;
+                                              }
+                                              return (
+                                                <>
+                                                  <div className="flex justify-between text-xs">
+                                                    <span className="text-slate-400">Input:</span>
+                                                    <span className="font-mono">{assessmentAvg.input.toLocaleString()}</span>
+                                                  </div>
+                                                  <div className="flex justify-between text-xs">
+                                                    <span className="text-slate-400">Output:</span>
+                                                    <span className="font-mono">{assessmentAvg.output.toLocaleString()}</span>
+                                                  </div>
+                                                  {assessmentAvg.reasoning > 0 && (
+                                                    <div className="flex justify-between text-xs">
+                                                      <span className="text-slate-400">Reasoning:</span>
+                                                      <span className="font-mono">{assessmentAvg.reasoning.toLocaleString()}</span>
+                                                    </div>
+                                                  )}
+                                                  <div className="flex justify-between text-xs font-semibold text-green-200 pt-1 border-t border-slate-700">
+                                                    <span>Avg Total:</span>
+                                                    <span className="font-mono">{assessmentAvg.total.toLocaleString()}</span>
+                                                  </div>
+                                                </>
+                                              );
+                                            })()}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Combined average total - Full width below columns */}
+                                      {(() => {
+                                        const avgTokens = getAverageTokenUsage(modelResult.model);
+                                        const combinedAvg = avgTokens?.combined;
+                                        if (combinedAvg) {
+                                          return (
+                                            <div className="pt-2 mt-2 border-t border-slate-600">
+                                              <div className="flex justify-between text-xs font-bold text-white">
+                                                <span>Combined Avg:</span>
+                                                <span className="font-mono">{combinedAvg.total.toLocaleString()}</span>
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
+
+                                      {/* Arrow pointer - adjusts based on position */}
+                                      <div
+                                        className={`absolute w-0 h-0 border-solid ${
+                                          tooltipPosition === 'above'
+                                            ? 'top-full left-2 border-t-[6px] border-t-slate-900 border-x-[6px] border-x-transparent'
+                                            : 'bottom-full left-2 border-b-[6px] border-b-slate-900 border-x-[6px] border-x-transparent'
+                                        }`}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4 font-semibold text-slate-900">
