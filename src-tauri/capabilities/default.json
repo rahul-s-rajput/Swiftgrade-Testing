@@ -24,9 +24,15 @@
     "shell:allow-kill",
     "process:default",
     "process:allow-exit",
+    "dialog:default",
+    "dialog:allow-save",
+    "dialog:allow-open",
+    "dialog:allow-message",
     "fs:default",
     "fs:allow-read-file",
     "fs:allow-read",
+    "fs:allow-write-file",
+    "fs:allow-write",
     "fs:allow-exists",
     "fs:allow-stat",
     {
@@ -55,7 +61,8 @@
         { "path": "**/*.png" },
         { "path": "**/*.gif" },
         { "path": "**/*.webp" },
-        { "path": "**/*.pdf" }
+        { "path": "**/*.pdf" },
+        { "path": "**/*.txt" }
       ]
     },
     {

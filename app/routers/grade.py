@@ -284,7 +284,106 @@ def _encode_url(u: str) -> str:
         return u
 
 
-def _build_rubric_messages(rubric_urls: List[str], questions: List[Dict[str, Any]], answer_key_urls: List[str] | None = None) -> List[Dict[str, Any]]:
+def _load_template_for_session(session_id: str, template_type: str, template_name: str = "default") -> tuple[str | None, str | None, str | None]:
+    """
+    Load templates for a specific session and template type.
+
+    Args:
+        session_id: The session ID
+        template_type: 'rubric' or 'assessment'
+        template_name: The specific template name (defaults to 'default')
+
+    Returns:
+        Tuple of (system_template, user_template, schema_template) - schema_template only for assessment templates
+    """
+    try:
+        # First, get session data to see what template is selected
+        session_res = supabase.table("session").select("selected_rubric_template", "selected_assessment_template").eq("id", session_id).limit(1).execute()
+        session_data = session_res.data or []
+
+        if not session_data:
+            if OPENROUTER_DEBUG:
+                logging.warning(f"⚠️ Session {session_id} not found, using default templates")
+            return (None, None, None)
+
+        session = session_data[0]
+
+        # Determine which template to use
+        if template_type == "rubric":
+            selected_template = session.get("selected_rubric_template", "default")
+            db_key = f"rubric_prompt_settings" if selected_template == "default" else f"rubric_template_{selected_template}"
+        elif template_type == "assessment":
+            selected_template = session.get("selected_assessment_template", "default")
+            db_key = f"prompt_settings" if selected_template == "default" else f"assessment_template_{selected_template}"
+        else:
+            raise ValueError(f"Invalid template_type: {template_type}")
+
+        if OPENROUTER_DEBUG:
+            logging.info(f"\n" + "="*60)
+            logging.info(f"🔍 Loading {template_type} template for session {session_id}")
+            logging.info(f"📋 Selected template: {selected_template}")
+            logging.info(f"🗄️  Database key: {db_key}")
+            logging.info("="*60)
+
+        # Load the template from app_settings
+        res = supabase.table("app_settings").select("value").eq("key", db_key).limit(1).execute()
+        rows = res.data or []
+
+        if not rows:
+            if OPENROUTER_DEBUG:
+                logging.warning(f"⚠️ No template found for key: {db_key}")
+            return (None, None, None)
+
+        value = rows[0].get("value")
+
+        # Handle different possible formats
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                value = {}
+        elif value is None:
+            value = {}
+        elif not isinstance(value, dict):
+            value = {}
+
+        # Extract templates
+        sys_template = value.get("system_template") if isinstance(value, dict) else None
+        user_template = value.get("user_template") if isinstance(value, dict) else None
+        schema_template = value.get("schema_template") if isinstance(value, dict) and template_type == "assessment" else None
+
+        # Validate and clean templates
+        if sys_template is not None:
+            sys_template = str(sys_template).strip() if sys_template else None
+            if not sys_template:
+                sys_template = None
+
+        if user_template is not None:
+            user_template = str(user_template).strip() if user_template else None
+            if not user_template:
+                user_template = None
+
+        if schema_template is not None:
+            schema_template = str(schema_template).strip() if schema_template else None
+            if not schema_template:
+                schema_template = None
+
+        if OPENROUTER_DEBUG:
+            logging.info(f"📄 Loaded {template_type} template '{selected_template}':")
+            logging.info(f"  - System: {len(sys_template) if sys_template else 0} chars")
+            logging.info(f"  - User: {len(user_template) if user_template else 0} chars")
+            if template_type == "assessment":
+                logging.info(f"  - Schema: {len(schema_template) if schema_template else 0} chars")
+
+        return (sys_template, user_template, schema_template)
+
+    except Exception as e:
+        if OPENROUTER_DEBUG:
+            logging.error(f"❌ Failed to load {template_type} template for session {session_id}: {e}")
+        return (None, None, None)
+
+
+def _build_rubric_messages(rubric_urls: List[str], questions: List[Dict[str, Any]], answer_key_urls: List[str] | None = None, session_id: str | None = None) -> List[Dict[str, Any]]:
     """Build OpenRouter chat messages for rubric analysis using DB-configured templates.
 
     Placeholders supported:
@@ -300,57 +399,30 @@ def _build_rubric_messages(rubric_urls: List[str], questions: List[Dict[str, Any
         _encode_url(u) for u in (answer_key_urls or []) if isinstance(u, str) and u
     ]
 
-    # Try to load rubric templates from Supabase
+    # Load rubric templates for this session
     sys_template: str | None = None
     user_template: str | None = None
-    try:
+
+    if session_id:
+        sys_template, user_template, _ = _load_template_for_session(session_id, "rubric")
+    else:
+        # Fallback to default behavior if no session_id provided
         if OPENROUTER_DEBUG:
-            logging.info("\n" + "-"*60)
-            logging.info("🔍 Fetching rubric prompt settings from database...")
-            logging.info("-"*60)
-        
-        res = supabase.table("app_settings").select("value").eq("key", "rubric_prompt_settings").limit(1).execute()
-        rows = res.data or []
-        
-        if rows and len(rows) > 0:
-            row = rows[0]
-            value = row.get("value")
-            
-            # Handle different formats
-            if isinstance(value, str):
-                try:
-                    value = json.loads(value)
-                except json.JSONDecodeError:
-                    value = {}
-            elif value is None:
-                value = {}
-            elif not isinstance(value, dict):
-                value = {}
-            
-            # Extract templates
-            sys_template = value.get("system_template") if isinstance(value, dict) else None
-            user_template = value.get("user_template") if isinstance(value, dict) else None
-            
-            # Convert and validate
-            if sys_template is not None:
-                sys_template = str(sys_template).strip() if sys_template else None
-                if not sys_template:
-                    sys_template = None
-            
-            if user_template is not None:
-                user_template = str(user_template).strip() if user_template else None
-                if not user_template:
-                    user_template = None
-            
+            logging.warning("⚠️ No session_id provided for rubric messages, using default template loading")
+
+        # Load default template the old way for backward compatibility
+        try:
+            res = supabase.table("app_settings").select("value").eq("key", "rubric_prompt_settings").limit(1).execute()
+            rows = res.data or []
+
+            if rows and len(rows) > 0:
+                value = rows[0].get("value")
+                if isinstance(value, dict):
+                    sys_template = value.get("system_template")
+                    user_template = value.get("user_template")
+        except Exception as e:
             if OPENROUTER_DEBUG:
-                logging.info("📄 Extracted rubric templates:")
-                logging.info("  - System: %s chars", len(sys_template) if sys_template else 0)
-                logging.info("  - User: %s chars", len(user_template) if user_template else 0)
-    except Exception as e:
-        if OPENROUTER_DEBUG:
-            logging.error("❌ Failed to load rubric settings: %s", str(e))
-        sys_template = None
-        user_template = None
+                logging.error("❌ Failed to load default rubric templates: %s", str(e))
 
     if sys_template and user_template:
         # Use custom templates
@@ -480,7 +552,7 @@ async def _call_rubric_llm(
     Stores the full response in rubric_result table.
     Returns the extracted rubric text for use in assessment.
     """
-    messages = _build_rubric_messages(rubric_urls, questions, answer_key_urls)
+    messages = _build_rubric_messages(rubric_urls, questions, answer_key_urls, session_id)
     
     # Call OpenRouter
     raw_response = await _call_openrouter(
@@ -645,7 +717,8 @@ def _build_messages(
     student_urls: List[str],
     key_urls: List[str],
     questions: List[Dict[str, Any]],
-    rubric_text: str | None = None  # NEW PARAMETER
+    rubric_text: str | None = None,  # NEW PARAMETER
+    session_id: str | None = None  # SESSION TEMPLATE PARAMETER
 ) -> List[Dict[str, Any]]:
     """Build OpenRouter chat messages using DB-configured templates when available.
 
@@ -663,99 +736,32 @@ def _build_messages(
         _encode_url(u) for u in (key_urls or []) if isinstance(u, str) and u
     ]
 
-    # Try to load templates from Supabase (table: app_settings, key: prompt_settings)
+    # Load assessment templates for this session
     sys_template: str | None = None
     user_template: str | None = None
     schema_template: str | None = None
-    try:
+
+    if session_id:
+        sys_template, user_template, schema_template = _load_template_for_session(session_id, "assessment")
+    else:
+        # Fallback to default behavior if no session_id provided
         if OPENROUTER_DEBUG:
-            logging.info("\n" + "-"*60)
-            logging.info("🔍 Fetching prompt settings from database...")
-            logging.info("-"*60)
-        
-        res = supabase.table("app_settings").select("value").eq("key", "prompt_settings").limit(1).execute()
-        rows = res.data or []
-        
-        if OPENROUTER_DEBUG:
-            logging.info("📄 Database response: %s rows found", len(rows))
-            if rows:
-                # Log the raw response to debug JSONB parsing
-                logging.info("🔍 Raw row type: %s", type(rows[0]))
-                logging.info("📦 Raw row: %s", rows[0])
-        
-        if rows and len(rows) > 0:
-            row = rows[0]
-            value = row.get("value")
-            
+            logging.warning("⚠️ No session_id provided for assessment messages, using default template loading")
+
+        # Load default template the old way for backward compatibility
+        try:
+            res = supabase.table("app_settings").select("value").eq("key", "prompt_settings").limit(1).execute()
+            rows = res.data or []
+
+            if rows and len(rows) > 0:
+                value = rows[0].get("value")
+                if isinstance(value, dict):
+                    sys_template = value.get("system_template")
+                    user_template = value.get("user_template")
+                    schema_template = value.get("schema_template")
+        except Exception as e:
             if OPENROUTER_DEBUG:
-                logging.info("🔍 Value type: %s", type(value))
-                logging.info("📦 Value content: %s", str(value)[:500] if value else "None")
-            
-            # Handle different possible formats of the value
-            if isinstance(value, str):
-                # If it's a string, try to parse it as JSON
-                try:
-                    value = json.loads(value)
-                    if OPENROUTER_DEBUG:
-                        logging.info("🔄 Parsed string value as JSON")
-                except json.JSONDecodeError:
-                    if OPENROUTER_DEBUG:
-                        logging.error("❌ Failed to parse value string as JSON")
-                    value = {}
-            elif value is None:
-                value = {}
-            elif not isinstance(value, dict):
-                if OPENROUTER_DEBUG:
-                    logging.warning("⚠️ Unexpected value type: %s", type(value))
-                value = {}
-            
-            # Extract templates
-            sys_template = value.get("system_template") if isinstance(value, dict) else None
-            user_template = value.get("user_template") if isinstance(value, dict) else None
-            schema_template = value.get("schema_template") if isinstance(value, dict) else None
-            
-            # Convert to string if needed and validate
-            if sys_template is not None:
-                sys_template = str(sys_template).strip() if sys_template else None
-                if not sys_template:  # Empty string becomes None
-                    sys_template = None
-                    
-            if user_template is not None:
-                user_template = str(user_template).strip() if user_template else None
-                if not user_template:  # Empty string becomes None
-                    user_template = None
-            
-            if schema_template is not None:
-                schema_template = str(schema_template).strip() if schema_template else None
-                if not schema_template:  # Empty string becomes None
-                    schema_template = None
-            
-            if OPENROUTER_DEBUG:
-                logging.info("📄 Extracted templates:")
-                logging.info("  - System template: %s chars (is None: %s)", 
-                           len(sys_template) if sys_template else 0, sys_template is None)
-                logging.info("  - User template: %s chars (is None: %s)", 
-                           len(user_template) if user_template else 0, user_template is None)
-                logging.info("  - Schema template: %s chars (is None: %s)", 
-                           len(schema_template) if schema_template else 0, schema_template is None)
-                if sys_template:
-                    logging.info("  - System preview: %s...", sys_template[:100])
-                if user_template:
-                    logging.info("  - User preview: %s...", user_template[:100])
-                if schema_template:
-                    logging.info("  - Schema preview: %s...", schema_template[:100])
-        else:
-            if OPENROUTER_DEBUG:
-                logging.warning("⚠️ No prompt settings found in database")
-    except Exception as e:
-        # Log the error before falling back
-        if OPENROUTER_DEBUG:
-            logging.error("❌ Failed to load prompt settings from database: %s", str(e))
-            logging.exception("Full traceback:")
-        # Fallback to hardcoded
-        sys_template = None
-        user_template = None
-        schema_template = None
+                logging.error("❌ Failed to load default assessment templates: %s", str(e))
 
     if sys_template and user_template:
         if OPENROUTER_DEBUG:
@@ -1466,7 +1472,7 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
     # Build messages for legacy flow only (model pairs build messages dynamically)
     legacy_messages = None
     if not use_model_pairs:
-        legacy_messages = _build_messages(student_urls, key_urls, questions)
+        legacy_messages = _build_messages(student_urls, key_urls, questions, session_id=payload.session_id)
     
     # Debug: Log the exact system and user messages for legacy flow
     if OPENROUTER_DEBUG and legacy_messages:
@@ -1598,7 +1604,7 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
                                    instance_id, try_index, assessment_model)
                     
                     # Build messages with rubric text
-                    messages = _build_messages(student_urls, key_urls, questions, rubric_text=rubric_text)
+                    messages = _build_messages(student_urls, key_urls, questions, rubric_text=rubric_text, session_id=payload.session_id)
                     
                     # Force Anthropic provider for Claude models
                     adjusted_model = assessment_model

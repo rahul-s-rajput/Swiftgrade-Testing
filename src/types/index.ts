@@ -32,10 +32,14 @@ export interface Assessment {
   rubricImages: File[];  // NEW: Grading rubric images
   questions: string;
   humanGrades: string;
-  
+
   // NEW: Model pairs for rubric-based grading
   modelPairs?: ModelPair[];
-  
+
+  // NEW: Template selections
+  selectedRubricTemplate?: string;
+  selectedAssessmentTemplate?: string;
+
   // LEGACY: Single models (kept for backward compatibility)
   selectedModels: string[];
   iterations: number;

@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, BarChart3, MessageCircle, Trophy, Target, Brain, Info } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BarChart3, MessageCircle, Trophy, Target, Brain, Info, Download } from 'lucide-react';
 import { useAssessments } from '../context/AssessmentContext';
 import { getRubricResults } from '../utils/api';  // NEW: Import rubric results API
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
 
 export const Review: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -391,6 +393,149 @@ export const Review: React.FC = () => {
       // If parsing fails, return null
       return null;
     }
+  };
+
+  // Helper: Download text file using Tauri's native dialog
+  const downloadTextFile = async (content: string, filename: string) => {
+    try {
+      // Use Tauri's native save dialog
+      const filePath = await save({
+        title: 'Export Question Analysis',
+        defaultPath: filename,
+        filters: [
+          { name: 'Text Files', extensions: ['txt'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+      
+      if (filePath) {
+        // Write the file using Tauri's fs plugin
+        await writeTextFile(filePath, content);
+        console.log('File saved successfully to:', filePath);
+      } else {
+        console.log('User cancelled save dialog');
+      }
+    } catch (error) {
+      console.error('Error saving file:', error);
+      // Fallback to browser download for dev mode
+      try {
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (fallbackError) {
+        console.error('Fallback download also failed:', fallbackError);
+      }
+    }
+  };
+
+  // Helper: Format criteria to text string
+  const formatCriteriaToText = (criteria: any): string => {
+    if (!criteria) return 'N/A';
+    
+    let text = '';
+    if (criteria.components && Array.isArray(criteria.components)) {
+      text = criteria.components.map((comp: any) => {
+        const header = comp.header || 'Component';
+        const marks = comp.marks !== null && comp.marks !== undefined ? ` (${comp.marks} marks)` : '';
+        const criteriaText = comp.criteria || 'No criteria specified';
+        return `${header}${marks}: ${criteriaText}`;
+      }).join('; ');
+    }
+    return text || 'N/A';
+  };
+
+  // Helper: Get model display name for export (reuses UI label functions to include reasoning)
+  const getModelDisplayName = (modelResult: any): string => {
+    if (modelResult.rubricModel && modelResult.assessmentModel) {
+      // Use the same formatting as the UI which includes reasoning info
+      return formatModelPairLabel(modelResult.rubricModel, modelResult.assessmentModel, modelResult.model);
+    }
+    return formatModelLabel(modelResult.model);
+  };
+
+  // Export handler for Question Analysis
+  const handleExport = async () => {
+    if (!results) return;
+    
+    const lines: string[] = [];
+    const tabTypeMap: Record<string, string> = {
+      'feedback': 'feedback_only',
+      'rubric': 'criteria_only',
+      'both': 'both'
+    };
+    
+    // Iterate through all questions
+    results.questions.forEach((question, qIndex) => {
+      const questionId = question.text;
+      lines.push(`Question ${questionId}:`);
+      
+      // Iterate through all models
+      results.modelResults.forEach((modelResult, modelIndex) => {
+        const modelName = getModelDisplayName(modelResult);
+        lines.push(`${modelName}:`);
+        
+        // Get rubric data for this model
+        const modelRubricData = rubricResults?.rubric_results?.[modelResult.model];
+        
+        // Iterate through all attempts/runs
+        modelResult.attempts.forEach((attempt) => {
+          const runNumber = attempt.attemptNumber;
+          
+          if (questionTab === 'feedback') {
+            // Feedback Only
+            const questionFeedback = attempt.questionFeedback?.find(
+              qf => qf.questionId === questionId
+            );
+            const feedback = questionFeedback?.feedback || 'N/A';
+            const mark = questionFeedback?.mark || 'N/A';
+            lines.push(`Run ${runNumber}:  Feedback "${feedback}", Marks: "${mark}"`);
+            
+          } else if (questionTab === 'rubric') {
+            // Criteria Only
+            const rubricResponse = modelRubricData?.[attempt.attemptNumber.toString()]?.rubric_response;
+            const criteria = rubricResponse ? extractQuestionCriteria(rubricResponse, questionId) : null;
+            const criteriaText = formatCriteriaToText(criteria);
+            lines.push(`Run ${runNumber}:  Criteria: "${criteriaText}"`);
+            
+          } else {
+            // Both
+            const rubricResponse = modelRubricData?.[attempt.attemptNumber.toString()]?.rubric_response;
+            const criteria = rubricResponse ? extractQuestionCriteria(rubricResponse, questionId) : null;
+            const criteriaText = formatCriteriaToText(criteria);
+            
+            const questionFeedback = attempt.questionFeedback?.find(
+              qf => qf.questionId === questionId
+            );
+            const feedback = questionFeedback?.feedback || 'N/A';
+            const mark = questionFeedback?.mark || 'N/A';
+            lines.push(`Run ${runNumber}:  Criteria: "${criteriaText}", Feedback "${feedback}", Marks: "${mark}"`);
+          }
+        });
+        
+        // Add empty line between models (but not after last model)
+        if (modelIndex < results.modelResults.length - 1) {
+          lines.push('');
+        }
+      });
+      
+      // Add empty line between questions (but not after last question)
+      if (qIndex < results.questions.length - 1) {
+        lines.push('');
+        lines.push('');
+      }
+    });
+    
+    // Generate filename
+    const assessmentName = assessment?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'assessment';
+    const tabType = tabTypeMap[questionTab] || 'export';
+    const filename = `${assessmentName}_${tabType}_export.txt`;
+    
+    // Download the file
+    await downloadTextFile(lines.join('\n'), filename);
   };
 
   // Component to render question criteria nicely
@@ -843,21 +988,21 @@ export const Review: React.FC = () => {
                                               <>
                                                 <div className="flex justify-between text-xs">
                                                   <span className="text-slate-400">Input:</span>
-                                                  <span className="font-mono">{attempt.tokenUsage.input_tokens.toLocaleString()}</span>
+                                                  <span className="font-mono">{(attempt.tokenUsage.input_tokens ?? 0).toLocaleString()}</span>
                                                 </div>
                                                 <div className="flex justify-between text-xs">
                                                   <span className="text-slate-400">Output:</span>
-                                                  <span className="font-mono">{attempt.tokenUsage.output_tokens.toLocaleString()}</span>
+                                                  <span className="font-mono">{(attempt.tokenUsage.output_tokens ?? 0).toLocaleString()}</span>
                                                 </div>
-                                                {attempt.tokenUsage.reasoning_tokens > 0 && (
+                                                {(attempt.tokenUsage.reasoning_tokens ?? 0) > 0 && (
                                                   <div className="flex justify-between text-xs">
                                                     <span className="text-slate-400">Reasoning:</span>
-                                                    <span className="font-mono">{attempt.tokenUsage.reasoning_tokens.toLocaleString()}</span>
+                                                    <span className="font-mono">{(attempt.tokenUsage.reasoning_tokens ?? 0).toLocaleString()}</span>
                                                   </div>
                                                 )}
                                                 <div className="flex justify-between text-xs font-semibold text-green-200 pt-1 border-t border-slate-700">
                                                   <span>Total:</span>
-                                                  <span className="font-mono">{attempt.tokenUsage.total_tokens.toLocaleString()}</span>
+                                                  <span className="font-mono">{(attempt.tokenUsage.total_tokens ?? 0).toLocaleString()}</span>
                                                 </div>
                                               </>
                                             ) || (
@@ -950,7 +1095,7 @@ export const Review: React.FC = () => {
           {activeTab === 'questions' && (
             <div className="space-y-6">
               {/* NEW: Sub-tab Navigation */}
-              <div className="border-b border-slate-200">
+              <div className="border-b border-slate-200 flex justify-between items-center">
                 <nav className="flex space-x-8">
                   <button
                     onClick={() => setQuestionTab('both')}
@@ -983,6 +1128,13 @@ export const Review: React.FC = () => {
                     Feedback Only
                   </button>
                 </nav>
+                <button
+                  onClick={handleExport}
+                  className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export
+                </button>
               </div>
 
               {/* Question Navigator */}

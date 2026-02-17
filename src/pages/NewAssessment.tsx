@@ -280,6 +280,8 @@ export const NewAssessment: React.FC = () => {
       console.log('[NewAssessment] Submitting assessment with model pairs:', {
         assessmentName: formData.name,
         modelPairs: modelPairs,
+        selectedRubricTemplate,
+        selectedAssessmentTemplate,
       });
 
       void addAssessment({
@@ -293,7 +295,9 @@ export const NewAssessment: React.FC = () => {
         selectedModels: [],
         iterations: formData.iterations,
         reasoningBySelection: [],
-        status: 'running'
+        status: 'running',
+        selectedRubricTemplate,
+        selectedAssessmentTemplate
       });
 
       navigate('/');

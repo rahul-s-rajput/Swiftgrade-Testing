@@ -131,7 +131,12 @@ export async function sleep(ms: number) { return new Promise(res => setTimeout(r
 // --- Endpoint wrappers ---
 
 export interface SessionCreateRes { session_id: string; status: string }
-export const createSession = (name?: string) => postJSON<SessionCreateRes>('/sessions', name ? { name } : {});
+export const createSession = (name?: string, selectedRubricTemplate?: string, selectedAssessmentTemplate?: string) =>
+  postJSON<SessionCreateRes>('/sessions', {
+    name,
+    selected_rubric_template: selectedRubricTemplate || 'default',
+    selected_assessment_template: selectedAssessmentTemplate || 'default'
+  });
 
 export interface TemplateRes {
   name: string;

@@ -71,3 +71,4 @@ src-tauri/target/
 .bolt/
 .kiro/
 .qoder/
+.claude/

@@ -18,6 +18,8 @@ class SessionListItem(BaseModel):
     rubric_models: Optional[List[str]] = None      # Legacy: Rubric model names
     assessment_models: Optional[List[str]] = None  # Legacy: Assessment model names
     model_pairs: Optional[List[Dict[str, Any]]] = None  # NEW: Complete model pair specifications with reasoning
+    selected_rubric_template: Optional[str] = None
+    selected_assessment_template: Optional[str] = None
 
 
 class ImageRegisterReq(BaseModel):
@@ -111,6 +113,8 @@ class GradeSingleRes(BaseModel):
 # --- Session Config API ---
 class SessionCreateReq(BaseModel):
     name: Optional[str] = None
+    selected_rubric_template: Optional[str] = "default"
+    selected_assessment_template: Optional[str] = "default"
 
 class SessionConfigReq(BaseModel):
     selected_models: List[str]

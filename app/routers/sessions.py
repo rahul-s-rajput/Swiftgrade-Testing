@@ -12,7 +12,17 @@ def create_session(payload: SessionCreateReq | None = None):
     session_id = str(uuid.uuid4())
     try:
         name = (payload.name or "").strip() if payload and payload.name is not None else None
-        supabase.table("session").insert({"id": session_id, "status": "created", "name": name}).execute()
+        rubric_template = payload.selected_rubric_template if payload and payload.selected_rubric_template else "default"
+        assessment_template = payload.selected_assessment_template if payload and payload.selected_assessment_template else "default"
+
+        session_data = {
+            "id": session_id,
+            "status": "created",
+            "name": name,
+            "selected_rubric_template": rubric_template,
+            "selected_assessment_template": assessment_template
+        }
+        supabase.table("session").insert(session_data).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create session: {e}")
     return SessionCreateRes(session_id=session_id, status="created")
@@ -40,6 +50,8 @@ def list_sessions():
                 rubric_models=(it.get("rubric_models") or None),
                 assessment_models=(it.get("assessment_models") or None),
                 model_pairs=(it.get("model_pairs") or None),  # NEW: Complete model pair specs
+                selected_rubric_template=(it.get("selected_rubric_template") or None),
+                selected_assessment_template=(it.get("selected_assessment_template") or None),
             )
             for it in items
             if it.get("id") is not None
@@ -91,8 +103,8 @@ def get_session_template(session_id: str):
                 "rubric_images": rubric_images
             },
             "templates": {
-                "rubric": "default",  # Default template since we don't store template names in session
-                "assessment": "default"  # Default template since we don't store template names in session
+                "rubric": session_data.get("selected_rubric_template", "default"),
+                "assessment": session_data.get("selected_assessment_template", "default")
             }
         }
 

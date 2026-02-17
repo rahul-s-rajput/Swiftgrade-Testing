@@ -138,6 +138,8 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               selectedModels: (s.selected_models || []),
               iterations: (typeof s.default_tries === 'number' && s.default_tries > 0 ? s.default_tries : 1),
               modelPairs: modelPairs,  // Constructed from backend data
+              selectedRubricTemplate: s.selected_rubric_template || 'default',
+              selectedAssessmentTemplate: s.selected_assessment_template || 'default',
             };
           });
           if (!cancelled) {
@@ -208,6 +210,8 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           selectedModels: (s.selected_models || []),
           iterations: (typeof s.default_tries === 'number' && s.default_tries > 0 ? s.default_tries : 1),
           modelPairs: modelPairs,  // Constructed from backend data
+          selectedRubricTemplate: s.selected_rubric_template || 'default',
+          selectedAssessmentTemplate: s.selected_assessment_template || 'default',
         };
       });
       
@@ -505,7 +509,11 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const addAssessment = useCallback(async (assessmentData: Omit<Assessment, 'id' | 'date'>) => {
     // 1) Create backend session
-    const session = await createSession(assessmentData.name);
+    const session = await createSession(
+      assessmentData.name,
+      assessmentData.selectedRubricTemplate,
+      assessmentData.selectedAssessmentTemplate
+    );
     const sessionId = session.session_id;
 
     // Create local placeholder entry immediately
