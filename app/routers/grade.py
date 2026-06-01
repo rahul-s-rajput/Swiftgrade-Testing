@@ -813,8 +813,6 @@ def _build_messages(
         
         if "[Response schema]" in sys_text:
             sys_text = sys_text.replace("[Response schema]", schema_text)
-        elif schema_text:  # Append schema if placeholder not present (backward compatibility)
-            sys_text = sys_text + schema_text
         
         # Process user template - build content array with support for all placeholders
         user_content: List[Dict[str, Any]] = []
@@ -1143,7 +1141,7 @@ def _parse_model_output(raw: Dict[str, Any]) -> Tuple[List[Dict[str, Any]] | Non
         student_info = {
             "first_name": obj.get("first_name"),
             "last_name": obj.get("last_name"),
-            "student_id": obj.get("Student_ID")
+            "student_id": obj.get("student_id") or obj.get("Student_ID")
         }
         
         if OPENROUTER_DEBUG and (student_info.get("first_name") or student_info.get("last_name")):
@@ -1151,7 +1149,13 @@ def _parse_model_output(raw: Dict[str, Any]) -> Tuple[List[Dict[str, Any]] | Non
         
         # Handle multiple possible response formats
         answers = obj.get("answers")
-        
+
+        # Support system-prompt schema: { first_name, last_name, student_id, graded_questions: [...] }
+        if answers is None:
+            graded_questions = obj.get("graded_questions")
+            if isinstance(graded_questions, list):
+                answers = graded_questions
+
         # Tolerant handling: if answers is a JSON string or a dict, coerce to expected list
         if isinstance(answers, str):
             try:

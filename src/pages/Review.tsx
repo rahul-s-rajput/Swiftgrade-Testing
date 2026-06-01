@@ -541,7 +541,25 @@ export const Review: React.FC = () => {
   // Component to render question criteria nicely
   const QuestionCriteriaDisplay: React.FC<{ criteria: any }> = ({ criteria }) => {
     if (!criteria) return null;
-    
+
+    const hasAdjustments = criteria.adjustments && Array.isArray(criteria.adjustments) && criteria.adjustments.length > 0;
+
+    const adjustmentBadge = (adj: any) => {
+      if (adj.action === 'set_total') {
+        return (
+          <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-1 rounded whitespace-nowrap">
+            = {adj.amount} {adj.amount_unit ?? 'marks'}
+          </span>
+        );
+      }
+      // deduct or anything else
+      return (
+        <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-1 rounded whitespace-nowrap">
+          −{adj.amount} {adj.amount_unit ?? 'marks'}
+        </span>
+      );
+    };
+
     return (
       <div className="space-y-3">
         <div className="flex items-center justify-between pb-2 border-b border-purple-300">
@@ -552,9 +570,9 @@ export const Review: React.FC = () => {
             Max: {criteria.max_mark} marks
           </span>
         </div>
-        
+
         {criteria.components && Array.isArray(criteria.components) && (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {criteria.components.map((component: any, idx: number) => (
               <div key={idx} className="bg-white/50 rounded-lg p-3 border border-purple-200">
                 <div className="flex items-center justify-between mb-2">
@@ -573,6 +591,39 @@ export const Review: React.FC = () => {
               </div>
             ))}
           </div>
+        )}
+
+        {hasAdjustments && (
+          <>
+            <div className="flex items-center gap-2 pt-1">
+              <div className="flex-1 border-t border-dashed border-purple-300" />
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide px-1">Adjustments</span>
+              <div className="flex-1 border-t border-dashed border-purple-300" />
+            </div>
+            <div className="space-y-2">
+              {criteria.adjustments.map((adj: any, idx: number) => {
+                const isSetTotal = adj.action === 'set_total';
+                return (
+                  <div
+                    key={idx}
+                    className={`rounded-lg p-3 border ${isSetTotal ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`font-semibold text-sm ${isSetTotal ? 'text-red-800' : 'text-amber-800'}`}>
+                        {adj.header || `Adjustment ${idx + 1}`}
+                      </span>
+                      {adjustmentBadge(adj)}
+                    </div>
+                    {adj.rule && (
+                      <p className={`text-xs leading-relaxed ${isSetTotal ? 'text-red-700' : 'text-amber-700'}`}>
+                        {adj.rule}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     );
