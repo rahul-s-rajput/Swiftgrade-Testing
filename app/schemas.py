@@ -32,6 +32,11 @@ class ImageRegisterReq(BaseModel):
 class SignedUrlReq(BaseModel):
     filename: str
     content_type: str = Field(..., description="MIME type, e.g. image/png")
+    # SHA-256 of the file bytes. When given, the object is stored at a path derived
+    # from it, so re-uploading the same image (e.g. via "Use as Template") reuses the
+    # existing object instead of creating a duplicate.
+    content_hash: Optional[str] = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    role: Optional[str] = Field(default=None, pattern=r"^(student|answer_key|grading_rubric)$")
 
 
 class SignedUrlRes(BaseModel):
@@ -40,6 +45,8 @@ class SignedUrlRes(BaseModel):
     path: str
     headers: Dict[str, str]
     publicUrl: Optional[str] = None
+    # True when an object with this content already exists; the client skips the upload.
+    exists: bool = False
 
 
 class ErrorDetail(BaseModel):

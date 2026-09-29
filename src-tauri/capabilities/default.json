@@ -32,6 +32,7 @@
     "fs:allow-read-file",
     "fs:allow-read",
     "fs:allow-write-file",
+    "fs:allow-write-text-file",
     "fs:allow-write",
     "fs:allow-exists",
     "fs:allow-stat",

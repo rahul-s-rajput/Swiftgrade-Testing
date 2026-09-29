@@ -22,8 +22,31 @@ OPENROUTER_HTTP_REFERER = os.getenv("OPENROUTER_HTTP_REFERER")
 OPENROUTER_APP_TITLE = os.getenv("OPENROUTER_APP_TITLE", "Local Dev App")
 OPENROUTER_DEBUG = os.getenv("OPENROUTER_DEBUG", "0").lower() in ("1", "true", "yes", "on")
 
-# File logging for full requests/responses per session
-GRADE_LOG_DIR = os.getenv("GRADE_LOG_DIR", "logs")
+# File logging for full requests/responses per session.
+# In the packaged app the working directory is the install location (Program Files on
+# Windows), which is not writable, so default to the per-user app-data dir that
+# load_environment() already uses for the .env file.
+def _default_log_dir() -> str:
+    try:
+        if os.name == "nt":
+            base = os.environ.get("APPDATA")
+            if base:
+                return os.path.join(base, "com.markgrading.assistant", "logs")
+        elif hasattr(os, "uname") and "darwin" in os.uname().sysname.lower():
+            return os.path.join(
+                os.path.expanduser("~"), "Library", "Application Support",
+                "com.markgrading.assistant", "logs",
+            )
+        else:
+            return os.path.join(
+                os.path.expanduser("~"), ".config", "mark-grading-assistant", "logs"
+            )
+    except Exception:
+        pass
+    return "logs"
+
+
+GRADE_LOG_DIR = os.getenv("GRADE_LOG_DIR") or _default_log_dir()
 
 def _json_pp(obj: Any) -> str:
     try:
@@ -53,6 +76,87 @@ def _bad_request(message: str, code: str = "VALIDATION_ERROR", details: dict | N
     return ex
 
 
+def _extract_provider_error(raw: Dict[str, Any]) -> Dict[str, Any] | None:
+    """Detect a provider failure that OpenRouter returned with an HTTP 200 status.
+
+    A dropped upstream stream comes back as a normal 200 response whose body carries
+    {"choices": [{"error": {"code": 502, ...}, "finish_reason": "error"}]} and a null
+    message content, so raise_for_status() never sees it.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    top_level = raw.get("error")
+    if isinstance(top_level, dict) and top_level:
+        return top_level
+
+    choices = raw.get("choices") or []
+    if not choices:
+        return {"message": "no choices returned"}
+
+    choice = choices[0] if isinstance(choices[0], dict) else {}
+
+    choice_err = choice.get("error")
+    if isinstance(choice_err, dict) and choice_err:
+        return choice_err
+
+    if choice.get("finish_reason") == "error":
+        return {"message": "provider reported finish_reason=error"}
+
+    # The model burned reasoning tokens but never emitted any content.
+    msg = choice.get("message") or {}
+    if isinstance(msg, dict) and msg.get("content") is None:
+        return {"message": "provider returned empty content"}
+
+    return None
+
+
+def _slim_response(raw: Any) -> Dict[str, Any] | None:
+    """Trim an OpenRouter response down to what's worth keeping in the database.
+
+    Full bodies carry reasoning_details (mostly encrypted reasoning blobs) that made up
+    most of the database size and are never read back. The complete response is still
+    written to the local session log in GRADE_LOG_DIR.
+    """
+    if not isinstance(raw, dict):
+        return None
+    slim: Dict[str, Any] = {
+        k: raw[k] for k in ("id", "model", "provider", "created", "usage", "error") if k in raw
+    }
+    choices = raw.get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        c = choices[0]
+        msg = c.get("message") if isinstance(c.get("message"), dict) else {}
+        slim["choices"] = [{
+            "finish_reason": c.get("finish_reason"),
+            "native_finish_reason": c.get("native_finish_reason"),
+            "message": {"role": msg.get("role"), "content": msg.get("content")},
+        }]
+    return slim
+
+
+def _merge_usage(acc: Dict[str, Any], usage: Any) -> Dict[str, Any]:
+    """Add one response's `usage` block into a running total.
+
+    OpenRouter bills every attempt, including the ones that fail with a dropped stream,
+    so a retried call must report the sum of all attempts rather than just the last one.
+    Numeric leaves are summed; nested blocks (prompt_tokens_details, cost_details, ...)
+    are merged recursively.
+    """
+    if not isinstance(usage, dict):
+        return acc
+    for k, v in usage.items():
+        if isinstance(v, bool):
+            acc.setdefault(k, v)
+        elif isinstance(v, (int, float)):
+            acc[k] = (acc.get(k) or 0) + v
+        elif isinstance(v, dict):
+            acc[k] = _merge_usage(acc.get(k) or {}, v)
+        else:
+            acc.setdefault(k, v)
+    return acc
+
+
 def _get_api_key() -> str:
     key = os.getenv("OPENROUTER_API_KEY")
     logging.info(f"🔑 OPENROUTER_API_KEY loaded: {'Yes' if key else 'No'}")
@@ -79,9 +183,11 @@ async def _call_openrouter(
 ) -> Dict[str, Any]:
     url = f"{OPENROUTER_BASE_URL.rstrip('/')}/chat/completions"
     payload: Dict[str, Any] = {
+        # Fallbacks are allowed so a dropped upstream stream can be re-routed to a
+        # healthy endpoint of the same model. We benchmark models, not providers.
         "model": model,
         "messages": messages,
-        "provider": {"allow_fallbacks": False},
+        "provider": {"allow_fallbacks": True},
     }
     
     # Force specific provider for Claude models to avoid routing issues
@@ -107,6 +213,8 @@ async def _call_openrouter(
         )
 
     last_retry_after: str | None = None
+    # OpenRouter charges for failed attempts too, so tokens are summed across all of them.
+    usage_acc: Dict[str, Any] = {}
     for attempt in range(3):
         try:
             # Always log request directly to console
@@ -160,10 +268,9 @@ async def _call_openrouter(
                 logging.info(resp.text)
                 
                 # Also save to file to prevent terminal truncation
-                log_dir = "logs"
-                os.makedirs(log_dir, exist_ok=True)
+                os.makedirs(GRADE_LOG_DIR, exist_ok=True)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                log_file = os.path.join(log_dir, f"openrouter_responses_{timestamp}.log")
+                log_file = os.path.join(GRADE_LOG_DIR, f"openrouter_responses_{timestamp}.log")
                 
                 with open(log_file, "a", encoding="utf-8") as f:
                     f.write(f"\n{'='*80}\n")
@@ -184,10 +291,10 @@ async def _call_openrouter(
                 await asyncio.sleep((retry_after or 2) * (2 ** attempt))
                 continue
             resp.raise_for_status()
-            
+
             # Try to parse JSON, but catch and log the actual response if it fails
             try:
-                return resp.json()
+                body = resp.json()
             except json.JSONDecodeError as json_err:
                 # Log the actual response content for debugging
                 response_text = resp.text
@@ -209,6 +316,46 @@ async def _call_openrouter(
                     status_code=502,
                     detail=f"OpenRouter returned invalid JSON. Response starts with: {response_text[:100]}"
                 ) from json_err
+
+            _merge_usage(usage_acc, body.get("usage"))
+
+            provider_err = _extract_provider_error(body)
+            if provider_err:
+                err_msg = provider_err.get("message") or str(provider_err)
+                logging.error("\n" + "-"*60)
+                logging.error("❌ OPENROUTER PROVIDER ERROR - Attempt %s", attempt + 1)
+                logging.error("-"*60)
+                logging.error("🤖 Model: %s", model)
+                logging.error("📄 Error: %s", _json_pp(provider_err))
+                logging.error("-"*60 + "\n")
+                if session_id:
+                    _append_session_log(
+                        session_id,
+                        f"PROVIDER_ERROR model={model} instance_id={instance_id or ''} "
+                        f"try={try_index or ''} attempt={attempt + 1}\n{_json_pp(provider_err)}",
+                    )
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                http_exc = HTTPException(
+                    status_code=502,
+                    detail=f"OpenRouter provider error after 3 attempts: {err_msg}",
+                )
+                try:
+                    http_exc.details = {"provider_error": provider_err}
+                except Exception:
+                    pass
+                raise http_exc
+
+            # Report what the call really cost: the sum of every attempt OpenRouter billed,
+            # not just the one that finally succeeded.
+            usage_acc["attempts"] = attempt + 1
+            body["usage"] = usage_acc
+            return body
+        except HTTPException:
+            # Already-classified failures (provider error, invalid JSON) must propagate
+            # instead of being re-wrapped as a generic 500 by the catch-all below.
+            raise
         except httpx.HTTPStatusError as e:
             # Always log errors directly to console
             logging.error("\n" + "-"*60)
@@ -681,7 +828,7 @@ async def _call_rubric_llm(
         "model_name": model_identifier,
         "try_index": try_index,
         "rubric_response": rubric_text if rubric_text else None,
-        "raw_output": raw_response,
+        "raw_output": _slim_response(raw_response),
         "validation_errors": validation_errors,
     }
     
@@ -1006,27 +1153,39 @@ def _extract_token_usage(raw: Dict[str, Any]) -> Dict[str, Any] | None:
             "output_tokens": usage.get("completion_tokens", 0),
             "reasoning_tokens": completion_details.get("reasoning_tokens", 0),
             "total_tokens": usage.get("total_tokens", 0),
-            "cache_creation_input_tokens": prompt_details.get("cached_tokens", 0),
-            "cache_read_input_tokens": 0,  # May not be provided by all providers
+            # cached_tokens are prompt tokens served from cache (reads); cache_write_tokens
+            # are the ones written into it. These were previously swapped.
+            "cache_read_input_tokens": prompt_details.get("cached_tokens", 0),
+            "cache_creation_input_tokens": prompt_details.get("cache_write_tokens", 0),
         }
-        
+
         # Add model info if available
         if raw.get("model"):
             token_data["model_id"] = raw.get("model")
-        
+
         # Add finish reason if available
         choices = raw.get("choices", [])
         if choices and len(choices) > 0:
             finish_reason = choices[0].get("finish_reason")
             if finish_reason:
                 token_data["finish_reason"] = finish_reason
-        
-        # Calculate cost estimate (adjust rates based on actual model pricing)
-        input_cost = token_data["input_tokens"] * 0.003 / 1000  # $3 per 1M tokens
-        output_cost = token_data["output_tokens"] * 0.015 / 1000  # $15 per 1M tokens
-        reasoning_cost = token_data["reasoning_tokens"] * 0.001 / 1000  # $1 per 1M tokens
-        token_data["cost_estimate"] = round(input_cost + output_cost + reasoning_cost, 6)
-        
+
+        # How many OpenRouter calls this attempt actually took (see _call_openrouter).
+        if usage.get("attempts"):
+            token_data["attempts"] = usage.get("attempts")
+
+        # Prefer the cost OpenRouter actually charged. Falling back to a flat per-token
+        # guess would misprice every model, since rates differ widely across them.
+        cost_details = usage.get("cost_details") or {}
+        actual_cost = usage.get("cost") or cost_details.get("upstream_inference_cost")
+        if isinstance(actual_cost, (int, float)) and actual_cost > 0:
+            token_data["cost_estimate"] = round(float(actual_cost), 6)
+        else:
+            input_cost = token_data["input_tokens"] * 0.003 / 1000  # $3 per 1M tokens
+            output_cost = token_data["output_tokens"] * 0.015 / 1000  # $15 per 1M tokens
+            reasoning_cost = token_data["reasoning_tokens"] * 0.001 / 1000  # $1 per 1M tokens
+            token_data["cost_estimate"] = round(input_cost + output_cost + reasoning_cost, 6)
+
         return token_data
     except Exception as e:
         logging.warning(f"Failed to extract token usage: {e}")
@@ -1599,6 +1758,15 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
                                         instance_id, try_index, str(e))
                             # Store error and skip assessment
                             return rubric_model, assessment_model, try_index, None, None, instance_id, str(e)
+
+                        if not rubric_text:
+                            # Grading with an empty rubric makes the assessment model return an
+                            # empty answer set, which would otherwise be recorded as a 0-mark
+                            # attempt and skew the model comparison. Fail the attempt instead.
+                            logging.error("❌ [PAIR %s] Try %s: Rubric came back empty; skipping assessment",
+                                          instance_id, try_index)
+                            return (rubric_model, assessment_model, try_index, None, None, instance_id,
+                                    "rubric phase returned no grading criteria")
                     else:
                         logging.warning("⚠️ No rubric images available, skipping rubric analysis")
                     
@@ -1756,7 +1924,7 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
                         "try_index": try_index,
                         "marks_awarded": a.get("marks_awarded"),
                         "rubric_notes": a.get("rubric_notes"),
-                        "raw_output": raw,
+                        "raw_output": None,
                         "validation_errors": None,
                     })
             else:
@@ -1777,7 +1945,7 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
                     "try_index": try_index,
                     "marks_awarded": None,
                     "rubric_notes": None,
-                    "raw_output": raw,
+                    "raw_output": _slim_response(raw),
                     "validation_errors": verr,
                 })
     else:
@@ -1852,7 +2020,7 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
                         "try_index": try_index,
                         "marks_awarded": a.get("marks_awarded"),
                         "rubric_notes": a.get("rubric_notes"),
-                        "raw_output": raw,
+                        "raw_output": None,
                         "validation_errors": None,
                     }
                 )
@@ -1873,7 +2041,7 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
                     "try_index": try_index,
                     "marks_awarded": None,
                     "rubric_notes": None,
-                    "raw_output": raw,
+                    "raw_output": _slim_response(raw),
                     "validation_errors": verr,
                 }
             )
@@ -1956,40 +2124,10 @@ async def grade_single(payload: GradeSingleReq) -> GradeSingleRes:
         if OPENROUTER_DEBUG and len(upserts) > BATCH_SIZE:
             logging.info("✅ All %s batches completed successfully", total_batches)
     
-    # Persist token usage data
+    # Persist token usage data. The token_usage table is created by the SQL migrations in
+    # app/migrations/, not from here.
     if token_usage_records:
         try:
-            # Create the token_usage table if it doesn't exist (for development)
-            # In production, this should be done via proper migrations
-            try:
-                supabase.rpc("exec_sql", {
-                    "query": """
-                    CREATE TABLE IF NOT EXISTS token_usage (
-                        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-                        session_id UUID NOT NULL,
-                        model_name TEXT NOT NULL,
-                        try_index INTEGER NOT NULL,
-                        input_tokens INTEGER DEFAULT 0,
-                        output_tokens INTEGER DEFAULT 0,
-                        reasoning_tokens INTEGER DEFAULT 0,
-                        total_tokens INTEGER GENERATED ALWAYS AS (input_tokens + output_tokens + COALESCE(reasoning_tokens, 0)) STORED,
-                        cache_creation_input_tokens INTEGER DEFAULT 0,
-                        cache_read_input_tokens INTEGER DEFAULT 0,
-                        model_id TEXT,
-                        finish_reason TEXT,
-                        cost_estimate DECIMAL(10, 6),
-                        metadata JSONB,
-                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                        CONSTRAINT unique_token_usage_per_attempt UNIQUE (session_id, model_name, try_index)
-                    )
-                    """
-                }).execute()
-            except Exception:
-                # Table might already exist, continue
-                pass
-            
-            # Insert token usage records
             supabase.table("token_usage").upsert(
                 token_usage_records,
                 on_conflict="session_id,model_name,try_index,phase"
@@ -2048,7 +2186,8 @@ def get_token_usage(session_id: str):
                 "input_tokens": record.get("input_tokens", 0),
                 "output_tokens": record.get("output_tokens", 0),
                 "reasoning_tokens": record.get("reasoning_tokens", 0),
-                "total_tokens": record.get("total_tokens", 0)
+                "total_tokens": record.get("total_tokens", 0),
+                "cost_estimate": float(record.get("cost_estimate") or 0),
             }
 
         return token_usage_by_phase

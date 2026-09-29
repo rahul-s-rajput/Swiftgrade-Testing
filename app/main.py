@@ -17,6 +17,7 @@ from .routers import grade as grade_router
 from .routers import results as results_router
 from .routers import stats as stats_router
 from .routers import settings as settings_router
+from .routers import usage as usage_router
 
 
 def load_environment():
@@ -423,7 +424,10 @@ try:
     
     app.include_router(settings_router.router)
     logger.info("✓ Settings router registered (includes /models endpoint)")
-    
+
+    app.include_router(usage_router.router)
+    logger.info("✓ Usage router registered")
+
     logger.info("All routers registered successfully")
     
 except Exception as e:

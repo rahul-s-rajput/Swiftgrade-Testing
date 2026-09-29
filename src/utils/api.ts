@@ -162,9 +162,20 @@ export interface SignedUrlRes {
   path: string;
   headers: Record<string, string>;
   publicUrl?: string | null;
+  // The object already exists (same content uploaded before); skip the upload.
+  exists?: boolean;
 }
-export const getSignedUrl = (filename: string, contentType: string) =>
-  postJSON<SignedUrlRes>('/images/signed-url', { filename, content_type: contentType });
+export const getSignedUrl = (
+  filename: string,
+  contentType: string,
+  opts?: { contentHash?: string; role?: 'student' | 'answer_key' | 'grading_rubric' }
+) =>
+  postJSON<SignedUrlRes>('/images/signed-url', {
+    filename,
+    content_type: contentType,
+    content_hash: opts?.contentHash,
+    role: opts?.role,
+  });
 
 export async function uploadToSignedUrl(uploadUrl: string, headers: Record<string, string>, file: File, contentType: string) {
   const finalHeaders = new Headers();
@@ -173,6 +184,9 @@ export async function uploadToSignedUrl(uploadUrl: string, headers: Record<strin
   const resp = await fetch(uploadUrl, { method: 'PUT', headers: finalHeaders, body: file });
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
+    // Content-addressed paths: another upload of the same bytes got there first,
+    // so the object we wanted is already in place.
+    if (resp.status === 409 || /duplicate|already exists/i.test(text)) return;
     throw new Error(`Upload failed: ${resp.status} ${resp.statusText} ${text}`);
   }
 }
@@ -503,3 +517,23 @@ export const saveTemplate = (type: 'rubric' | 'assessment', name: string, data: 
 
 export const deleteTemplate = (type: 'rubric' | 'assessment', name: string) =>
   del(`/settings/templates/${type}/${name}`);
+
+// --- Supabase usage (database + storage vs plan limits) ---
+
+export interface UsageMeter {
+  used_bytes: number;
+  limit_bytes: number;
+  percent: number;
+}
+
+export interface UsageRes {
+  available: boolean;
+  // The Supabase project is blocked for exceeding a plan limit.
+  restricted?: boolean;
+  message?: string;
+  warn_percent?: number;
+  database?: UsageMeter;
+  storage?: UsageMeter & { objects: number };
+}
+
+export const getUsage = () => getJSON<UsageRes>('/usage');

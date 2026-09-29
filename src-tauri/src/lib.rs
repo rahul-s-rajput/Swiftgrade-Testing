@@ -508,8 +508,9 @@ pub fn run() {
                     "about" => {
                         // Show about dialog using the correct API
                         let app_handle_clone = app.app_handle().clone();
+                        let version = app_handle_clone.package_info().version.to_string();
                         app_handle_clone.dialog()
-                            .message("Swiftgrade Testing Assistant v1.0.0\n\nAn AI-powered tool for grading assessments.\n\n© 2024")
+                            .message(format!("Swiftgrade Testing Assistant v{}\n\nAn AI-powered tool for grading assessments.\n\n© 2026", version))
                             .title("About Swiftgrade Testing Assistant")
                             .blocking_show();
                     }

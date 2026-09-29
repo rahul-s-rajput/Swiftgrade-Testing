@@ -100,6 +100,8 @@ export interface Attempt {
     output_tokens?: number;
     reasoning_tokens?: number;
     total_tokens?: number;
+    // Actual amount OpenRouter charged for this attempt, summed across any retries.
+    cost_estimate?: number;
   };
 }
 

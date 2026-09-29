@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { getPromptSettings, putPromptSettings, PromptSettingsRes, getRubricPromptSettings, putRubricPromptSettings, RubricPromptSettingsRes, getTemplates, saveTemplate, deleteTemplate, Template } from '../utils/api';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { Save, RefreshCw, FolderOpen, FileEdit, AlertCircle, FileText, Settings as SettingsIcon, Plus, Trash2 } from 'lucide-react';
+import { Save, RefreshCw, FolderOpen, FileEdit, AlertCircle, FileText, Settings as SettingsIcon, Plus, Trash2, HardDrive } from 'lucide-react';
+import { UsagePanel } from '../components/StorageUsage';
 
 interface EnvConfig {
   api_key: string;
@@ -13,7 +14,7 @@ interface EnvConfig {
 
 export const Settings: React.FC = () => {
   // Tab state
-  const [activeTab, setActiveTab] = useState<'rubric-prompt' | 'prompt' | 'environment'>('rubric-prompt');
+  const [activeTab, setActiveTab] = useState<'rubric-prompt' | 'prompt' | 'storage' | 'environment'>('rubric-prompt');
   
   // Prompt settings state
   const [loading, setLoading] = useState(true);
@@ -421,7 +422,19 @@ export const Settings: React.FC = () => {
             <FileText className="w-4 h-4" />
             Grade Assessment Settings
             </button>
-            
+
+          <button
+            onClick={() => setActiveTab('storage')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+              activeTab === 'storage'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <HardDrive className="w-4 h-4" />
+            Storage & Usage
+          </button>
+
         {isTauri() && (
             <button
               onClick={() => setActiveTab('environment')}
@@ -654,6 +667,8 @@ export const Settings: React.FC = () => {
             </div>
           </form>
         )
+      ) : activeTab === 'storage' ? (
+        <UsagePanel />
       ) : (
         envLoading ? (
           <div className="text-slate-600">Loading environment configuration…</div>

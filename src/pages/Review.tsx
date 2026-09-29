@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, BarChart3, MessageCircle, Trophy, Target, Brain, Info, Download } from 'lucide-react';
 import { useAssessments } from '../context/AssessmentContext';
 import { getRubricResults } from '../utils/api';  // NEW: Import rubric results API
-import { save } from '@tauri-apps/plugin-dialog';
+import { save, message } from '@tauri-apps/plugin-dialog';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
 
 export const Review: React.FC = () => {
@@ -19,6 +20,8 @@ export const Review: React.FC = () => {
   const [hoveredAttempt, setHoveredAttempt] = useState<string | null>(null);
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<'above' | 'below'>('below');
+  // Screen coordinates for the floating (portaled) tooltip so it isn't clipped by the table's scroll container
+  const [tooltipCoords, setTooltipCoords] = useState<{ top: number; left: number } | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const modelTooltipRef = useRef<HTMLDivElement>(null);
   const iconRef = useRef<HTMLDivElement>(null);
@@ -303,6 +306,9 @@ export const Review: React.FC = () => {
   };
 
   // Helper function to get token usage for a specific attempt
+  // Cost as billed by OpenRouter. Sub-cent figures need the extra places to stay meaningful.
+  const formatCost = (value?: number) => (value && value > 0 ? `$${value.toFixed(4)}` : null);
+
   const getTokenUsageForAttempt = (model: string, attemptNumber: number, phase: 'rubric' | 'assessment') => {
     if (!tokenUsage || !tokenUsage[phase]) return null;
 
@@ -317,8 +323,8 @@ export const Review: React.FC = () => {
   const getAverageTokenUsage = (model: string) => {
     if (!tokenUsage) return null;
 
-    let totalRubric = { input: 0, output: 0, reasoning: 0, total: 0, count: 0 };
-    let totalAssessment = { input: 0, output: 0, reasoning: 0, total: 0, count: 0 };
+    let totalRubric = { input: 0, output: 0, reasoning: 0, total: 0, cost: 0, count: 0 };
+    let totalAssessment = { input: 0, output: 0, reasoning: 0, total: 0, cost: 0, count: 0 };
 
     // Calculate rubric averages
     if (tokenUsage.rubric && tokenUsage.rubric[model]) {
@@ -328,6 +334,7 @@ export const Review: React.FC = () => {
         totalRubric.output += attempt.output_tokens || 0;
         totalRubric.reasoning += attempt.reasoning_tokens || 0;
         totalRubric.total += attempt.total_tokens || 0;
+        totalRubric.cost += attempt.cost_estimate || 0;
         totalRubric.count++;
       });
     }
@@ -340,6 +347,7 @@ export const Review: React.FC = () => {
         totalAssessment.output += attempt.output_tokens || 0;
         totalAssessment.reasoning += attempt.reasoning_tokens || 0;
         totalAssessment.total += attempt.total_tokens || 0;
+        totalAssessment.cost += attempt.cost_estimate || 0;
         totalAssessment.count++;
       });
     }
@@ -350,6 +358,7 @@ export const Review: React.FC = () => {
       output: Math.round(totalRubric.output / totalRubric.count),
       reasoning: Math.round(totalRubric.reasoning / totalRubric.count),
       total: Math.round(totalRubric.total / totalRubric.count),
+      cost: totalRubric.cost / totalRubric.count,
     } : null;
 
     const avgAssessment = totalAssessment.count > 0 ? {
@@ -357,6 +366,7 @@ export const Review: React.FC = () => {
       output: Math.round(totalAssessment.output / totalAssessment.count),
       reasoning: Math.round(totalAssessment.reasoning / totalAssessment.count),
       total: Math.round(totalAssessment.total / totalAssessment.count),
+      cost: totalAssessment.cost / totalAssessment.count,
     } : null;
 
     return {
@@ -367,6 +377,7 @@ export const Review: React.FC = () => {
         output: avgRubric.output + avgAssessment.output,
         reasoning: avgRubric.reasoning + avgAssessment.reasoning,
         total: avgRubric.total + avgAssessment.total,
+        cost: avgRubric.cost + avgAssessment.cost,
       } : null
     };
   };
@@ -397,8 +408,20 @@ export const Review: React.FC = () => {
 
   // Helper: Download text file using Tauri's native dialog
   const downloadTextFile = async (content: string, filename: string) => {
+    // In browser mode there is no Tauri IPC, so use a blob download. The anchor
+    // download is a no-op inside the desktop WebView, so it is never a fallback there.
+    if (!(window as any).__TAURI__) {
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
     try {
-      // Use Tauri's native save dialog
       const filePath = await save({
         title: 'Export Question Analysis',
         defaultPath: filename,
@@ -407,28 +430,17 @@ export const Review: React.FC = () => {
           { name: 'All Files', extensions: ['*'] }
         ]
       });
-      
-      if (filePath) {
-        // Write the file using Tauri's fs plugin
-        await writeTextFile(filePath, content);
-        console.log('File saved successfully to:', filePath);
-      } else {
-        console.log('User cancelled save dialog');
-      }
+
+      if (!filePath) return; // user cancelled
+
+      await writeTextFile(filePath, content);
+      console.log('File saved successfully to:', filePath);
     } catch (error) {
       console.error('Error saving file:', error);
-      // Fallback to browser download for dev mode
-      try {
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-      } catch (fallbackError) {
-        console.error('Fallback download also failed:', fallbackError);
-      }
+      await message(`Could not save the export.\n\n${error instanceof Error ? error.message : String(error)}`, {
+        title: 'Export failed',
+        kind: 'error',
+      });
     }
   };
 
@@ -769,16 +781,14 @@ export const Review: React.FC = () => {
                                   className="relative inline-flex items-center"
                                   onMouseEnter={(e) => {
                                     setHoveredModel(modelResult.model);
-                                    // Check if tooltip would go off-screen
                                     const rect = e.currentTarget.getBoundingClientRect();
-                                    const spaceBelow = window.innerHeight - rect.bottom;
-                                    const tooltipHeight = 200; // Approximate height of tooltip
-
-                                    if (spaceBelow < tooltipHeight) {
-                                      setTooltipPosition('above');
-                                    } else {
-                                      setTooltipPosition('below');
-                                    }
+                                    const tooltipHeight = 300; // Must track maxHeight below, or the tooltip runs off-screen
+                                    const below = (window.innerHeight - rect.bottom) >= tooltipHeight;
+                                    setTooltipPosition(below ? 'below' : 'above');
+                                    setTooltipCoords({
+                                      left: rect.right + 8,
+                                      top: below ? rect.top : Math.max(8, rect.bottom - tooltipHeight),
+                                    });
                                   }}
                                   onMouseLeave={() => {
                                     setHoveredModel(null);
@@ -787,18 +797,18 @@ export const Review: React.FC = () => {
                                 >
                                   <Info className="w-4 h-4 text-slate-400 hover:text-slate-600 cursor-help" />
 
-                                  {hoveredModel === modelResult.model && (
+                                  {hoveredModel === modelResult.model && tooltipCoords && createPortal(
                                     <div
                                       ref={modelTooltipRef}
-                                      className={`absolute left-6 z-50 bg-slate-900 text-white p-3 rounded-lg shadow-xl text-xs ${
-                                        tooltipPosition === 'above'
-                                          ? 'bottom-6'
-                                          : 'top-0'
-                                      }`}
+                                      className="bg-slate-900 text-white p-3 rounded-lg shadow-xl text-xs"
                                       style={{
+                                        position: 'fixed',
+                                        left: tooltipCoords.left,
+                                        top: tooltipCoords.top,
+                                        zIndex: 9999,
                                         minWidth: '340px',
                                         maxWidth: '420px',
-                                        maxHeight: '200px',
+                                        maxHeight: '300px',
                                         overflow: 'auto'
                                       }}
                                     >
@@ -836,6 +846,12 @@ export const Review: React.FC = () => {
                                                     <span>Avg Total:</span>
                                                     <span className="font-mono">{rubricAvg.total.toLocaleString()}</span>
                                                   </div>
+                                                  {formatCost(rubricAvg.cost) && (
+                                                    <div className="flex justify-between text-xs text-amber-300">
+                                                      <span>Avg Cost:</span>
+                                                      <span className="font-mono">{formatCost(rubricAvg.cost)}</span>
+                                                    </div>
+                                                  )}
                                                 </>
                                               );
                                             })()}
@@ -872,6 +888,12 @@ export const Review: React.FC = () => {
                                                     <span>Avg Total:</span>
                                                     <span className="font-mono">{assessmentAvg.total.toLocaleString()}</span>
                                                   </div>
+                                                  {formatCost(assessmentAvg.cost) && (
+                                                    <div className="flex justify-between text-xs text-amber-300">
+                                                      <span>Avg Cost:</span>
+                                                      <span className="font-mono">{formatCost(assessmentAvg.cost)}</span>
+                                                    </div>
+                                                  )}
                                                 </>
                                               );
                                             })()}
@@ -890,21 +912,19 @@ export const Review: React.FC = () => {
                                                 <span>Combined Avg:</span>
                                                 <span className="font-mono">{combinedAvg.total.toLocaleString()}</span>
                                               </div>
+                                              {formatCost(combinedAvg.cost) && (
+                                                <div className="flex justify-between text-xs font-bold text-amber-300">
+                                                  <span>Avg Cost / Attempt:</span>
+                                                  <span className="font-mono">{formatCost(combinedAvg.cost)}</span>
+                                                </div>
+                                              )}
                                             </div>
                                           );
                                         }
                                         return null;
                                       })()}
-
-                                      {/* Arrow pointer - adjusts based on position */}
-                                      <div
-                                        className={`absolute w-0 h-0 border-solid ${
-                                          tooltipPosition === 'above'
-                                            ? 'top-full left-2 border-t-[6px] border-t-slate-900 border-x-[6px] border-x-transparent'
-                                            : 'bottom-full left-2 border-b-[6px] border-b-slate-900 border-x-[6px] border-x-transparent'
-                                        }`}
-                                      />
-                                    </div>
+                                    </div>,
+                                    document.body
                                   )}
                                 </div>
                               )}
@@ -960,16 +980,14 @@ export const Review: React.FC = () => {
                                   className="relative inline-flex items-center"
                                   onMouseEnter={(e) => {
                                     setHoveredAttempt(attemptKey);
-                                    // Check if tooltip would go off-screen
                                     const rect = e.currentTarget.getBoundingClientRect();
-                                    const spaceBelow = window.innerHeight - rect.bottom;
-                                    const tooltipHeight = 250; // Approximate height of tooltip
-                                    
-                                    if (spaceBelow < tooltipHeight) {
-                                      setTooltipPosition('above');
-                                    } else {
-                                      setTooltipPosition('below');
-                                    }
+                                    const tooltipHeight = 380; // Must track maxHeight below, or the tooltip runs off-screen
+                                    const below = (window.innerHeight - rect.bottom) >= tooltipHeight;
+                                    setTooltipPosition(below ? 'below' : 'above');
+                                    setTooltipCoords({
+                                      left: rect.right + 8,
+                                      top: below ? rect.top : Math.max(8, rect.bottom - tooltipHeight),
+                                    });
                                   }}
                                   onMouseLeave={() => {
                                     setHoveredAttempt(null);
@@ -977,19 +995,19 @@ export const Review: React.FC = () => {
                                   }}
                                 >
                                   <Info className="w-4 h-4 text-slate-400 hover:text-slate-600 cursor-help" />
-                                  {hoveredAttempt === attemptKey && (
+                                  {hoveredAttempt === attemptKey && tooltipCoords && createPortal(
                                     <div
                                       ref={tooltipRef}
-                                      className={`absolute left-6 z-50 bg-slate-900 text-white p-3 rounded-lg shadow-xl text-xs ${
-                                        tooltipPosition === 'above'
-                                          ? 'bottom-6'
-                                          : 'top-0'
-                                      }`}
+                                      className="bg-slate-900 text-white p-3 rounded-lg shadow-xl text-xs"
                                       style={{
+                                        position: 'fixed',
+                                        left: tooltipCoords.left,
+                                        top: tooltipCoords.top,
+                                        zIndex: 9999,
                                         minWidth: '340px',
                                         maxWidth: '420px',
-                                        maxHeight: '280px',
-                                        overflow: 'hidden'
+                                        maxHeight: '380px',
+                                        overflow: 'auto'
                                       }}
                                     >
                                       <div className="font-semibold mb-2 border-b border-slate-700 pb-1">Token Usage</div>
@@ -1025,6 +1043,12 @@ export const Review: React.FC = () => {
                                                     <span>Total:</span>
                                                     <span className="font-mono">{rubricTokens.total_tokens.toLocaleString()}</span>
                                                   </div>
+                                                  {formatCost(rubricTokens.cost_estimate) && (
+                                                    <div className="flex justify-between text-xs text-amber-300">
+                                                      <span>Cost:</span>
+                                                      <span className="font-mono">{formatCost(rubricTokens.cost_estimate)}</span>
+                                                    </div>
+                                                  )}
                                                 </>
                                               );
                                             })()}
@@ -1055,6 +1079,12 @@ export const Review: React.FC = () => {
                                                   <span>Total:</span>
                                                   <span className="font-mono">{(attempt.tokenUsage.total_tokens ?? 0).toLocaleString()}</span>
                                                 </div>
+                                                {formatCost(attempt.tokenUsage.cost_estimate) && (
+                                                  <div className="flex justify-between text-xs text-amber-300">
+                                                    <span>Cost:</span>
+                                                    <span className="font-mono">{formatCost(attempt.tokenUsage.cost_estimate)}</span>
+                                                  </div>
+                                                )}
                                               </>
                                             ) || (
                                               <div className="text-xs text-slate-400">No assessment tokens</div>
@@ -1064,31 +1094,28 @@ export const Review: React.FC = () => {
                                       </div>
 
                                       {/* Combined total - Full width below columns */}
-                                      <div className="pt-2 mt-2 border-t border-slate-600">
-                                        <div className="flex justify-between text-xs font-bold text-white">
-                                          <span>Combined Total:</span>
-                                          <span className="font-mono">
-                                            {(() => {
-                                              const rubricTokens = getTokenUsageForAttempt(modelResult.model, attempt.attemptNumber, 'rubric');
-                                              const assessmentTokens = attempt.tokenUsage;
-                                              const rubricTotal = rubricTokens?.total_tokens || 0;
-                                              const assessmentTotal = assessmentTokens?.total_tokens || 0;
-                                              const combinedTotal = rubricTotal + assessmentTotal;
-                                              return combinedTotal.toLocaleString();
-                                            })()}
-                                          </span>
-                                        </div>
-                                      </div>
-
-                                      {/* Arrow pointer - adjusts based on position */}
-                                      <div
-                                        className={`absolute w-0 h-0 border-solid ${
-                                          tooltipPosition === 'above'
-                                            ? 'top-full left-2 border-t-[6px] border-t-slate-900 border-x-[6px] border-x-transparent'
-                                            : 'bottom-full left-2 border-b-[6px] border-b-slate-900 border-x-[6px] border-x-transparent'
-                                        }`}
-                                      />
-                                    </div>
+                                      {(() => {
+                                        const rubricTokens = getTokenUsageForAttempt(modelResult.model, attempt.attemptNumber, 'rubric');
+                                        const assessmentTokens = attempt.tokenUsage;
+                                        const combinedTotal = (rubricTokens?.total_tokens || 0) + (assessmentTokens?.total_tokens || 0);
+                                        const combinedCost = (rubricTokens?.cost_estimate || 0) + (assessmentTokens?.cost_estimate || 0);
+                                        return (
+                                          <div className="pt-2 mt-2 border-t border-slate-600">
+                                            <div className="flex justify-between text-xs font-bold text-white">
+                                              <span>Combined Total:</span>
+                                              <span className="font-mono">{combinedTotal.toLocaleString()}</span>
+                                            </div>
+                                            {formatCost(combinedCost) && (
+                                              <div className="flex justify-between text-xs font-bold text-amber-300">
+                                                <span>Combined Cost:</span>
+                                                <span className="font-mono">{formatCost(combinedCost)}</span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>,
+                                    document.body
                                   )}
                                 </div>
                               )}

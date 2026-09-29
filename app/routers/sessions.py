@@ -1,8 +1,10 @@
 from fastapi import APIRouter, status, HTTPException
+import logging
 import uuid
 
 from ..schemas import SessionCreateRes, SessionListItem, SessionCreateReq
 from ..supabase_client import supabase
+from ..util.storage import path_from_public_url, remove_objects
 
 router = APIRouter()
 
@@ -152,7 +154,39 @@ def delete_session(session_id: str):
         if not res.data:
             # Idempotent delete: treat as no-content if already gone
             return
+        img_res = supabase.table("image").select("url").eq("session_id", session_id).execute()
+        urls = sorted({r["url"] for r in (img_res.data or []) if r.get("url")})
+
+        # Rows first (image/question/result/... cascade). If storage cleanup then
+        # fails, the leftovers are orphans that scripts/cleanup_storage.py removes.
         supabase.table("session").delete().eq("id", session_id).execute()
-        return
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete session: {e}")
+
+    _remove_unshared_images(session_id, urls)
+    return
+
+
+def _remove_unshared_images(session_id: str, urls: list) -> None:
+    """Delete the session's image files, keeping any another session still uses.
+
+    Upload paths are content-addressed, so a template-reused session shares objects
+    with the session it was copied from.
+    """
+    if not urls:
+        return
+    try:
+        still_used = set()
+        for i in range(0, len(urls), 50):
+            chunk = urls[i:i + 50]
+            r = supabase.table("image").select("url").in_("url", chunk).execute()
+            still_used.update(row["url"] for row in (r.data or []))
+
+        paths = [path_from_public_url(u) for u in urls if u not in still_used]
+        removed, errors = remove_objects(p for p in paths if p)
+        logging.info(
+            "Session %s deleted: removed %d image files, kept %d shared, %d errors",
+            session_id, removed, len(still_used), len(errors),
+        )
+    except Exception:
+        logging.exception("Failed to remove image files for deleted session %s", session_id)

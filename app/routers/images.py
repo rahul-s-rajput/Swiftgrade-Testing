@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import unicodedata
@@ -145,6 +146,36 @@ def _extract(obj, *keys):
     return None
 
 
+def _public_url(bucket: str, path: str) -> str | None:
+    # Compute public URL (works if bucket is public); optional otherwise
+    try:
+        pub_resp = supabase.storage.from_(bucket).get_public_url(path)
+        public_url = _extract(pub_resp, "publicUrl", "public_url", "signedUrl", "url")
+    except Exception:
+        public_url = None
+
+    # Fallback: deterministically build public URL if bucket is configured public
+    if not public_url:
+        base = os.getenv("SUPABASE_URL")
+        if base:
+            # This URL form works only when the bucket is public
+            # Ensure the path is URL-encoded for providers that fail on spaces/parentheses
+            encoded_path = quote(path, safe="/")
+            public_url = f"{base}/storage/v1/object/public/{bucket}/{encoded_path}"
+    return public_url
+
+
+def _object_exists(bucket: str, folder: str, name: str) -> bool:
+    try:
+        items = supabase.storage.from_(bucket).list(folder, {"search": name, "limit": 10})
+    except Exception as e:
+        # Treat as missing; the upload then either succeeds or hits "Duplicate",
+        # which the client also accepts.
+        logging.warning("Storage existence check failed for %s/%s: %s", folder, name, e)
+        return False
+    return any(isinstance(i, dict) and i.get("name") == name for i in items or [])
+
+
 @router.post("/images/signed-url", response_model=SignedUrlRes)
 def create_signed_upload_url(payload: SignedUrlReq) -> SignedUrlRes:
     if not payload.filename or "/" in payload.filename or ".." in payload.filename:
@@ -156,8 +187,23 @@ def create_signed_upload_url(payload: SignedUrlReq) -> SignedUrlRes:
 
     # Sanitize filename to avoid spaces/special chars and ensure provider compatibility
     safe_name = _sanitize_filename(payload.filename)
-    # Unique path per upload to avoid collisions; organize by random UUID segment
-    path = f"{uuid4().hex}/{safe_name}"
+    if payload.content_hash:
+        # Content-addressed path: identical bytes always map to the same object.
+        # The role folder keeps a page used as both student and rubric image as two
+        # distinct URLs, which image.url's per-session uniqueness requires.
+        folder = payload.role or "misc"
+        path = f"{folder}/{payload.content_hash}{os.path.splitext(safe_name)[1]}"
+        if _object_exists(bucket, folder, path.split("/", 1)[1]):
+            return SignedUrlRes(
+                uploadUrl="",
+                path=path,
+                headers={},
+                publicUrl=_public_url(bucket, path),
+                exists=True,
+            )
+    else:
+        # Legacy clients: unique path per upload
+        path = f"{uuid4().hex}/{safe_name}"
 
     try:
         resp = supabase.storage.from_(bucket).create_signed_upload_url(path)
@@ -179,21 +225,7 @@ def create_signed_upload_url(payload: SignedUrlReq) -> SignedUrlRes:
         "Content-Type": payload.content_type,
     }
 
-    # Compute public URL (works if bucket is public); optional otherwise
-    try:
-        pub_resp = supabase.storage.from_(bucket).get_public_url(path)
-        public_url = _extract(pub_resp, "publicUrl", "public_url", "signedUrl", "url")
-    except Exception:
-        public_url = None
-
-    # Fallback: deterministically build public URL if bucket is configured public
-    if not public_url:
-        base = os.getenv("SUPABASE_URL")
-        if base:
-            # This URL form works only when the bucket is public
-            # Ensure the path is URL-encoded for providers that fail on spaces/parentheses
-            encoded_path = quote(path, safe="/")
-            public_url = f"{base}/storage/v1/object/public/{bucket}/{encoded_path}"
+    public_url = _public_url(bucket, path)
 
     if not signed_url and not token:
         raise HTTPException(status_code=500, detail="Supabase did not return a signed upload URL or token")

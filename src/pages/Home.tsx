@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Loader2, CheckCircle, Trash2, Eye, Calendar, Cpu, RotateCcw, AlertTriangle, MoreHorizontal, Copy, Edit3 } from 'lucide-react';
 import { useAssessments } from '../context/AssessmentContext';
+import { UsageBanner } from '../components/StorageUsage';
 
 export const Home: React.FC = () => {
   const { assessments, deleteAssessment, refreshSessions, retryAssessment, renameAssessment, loading } = useAssessments();
@@ -113,6 +114,8 @@ export const Home: React.FC = () => {
 
   if (assessments.length === 0) {
     return (
+      <div className="space-y-8">
+      <UsageBanner />
       <div className="text-center py-20">
         <div className="mx-auto w-32 h-32 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mb-8 shadow-lg">
           <Plus className="w-16 h-16 text-blue-600" />
@@ -129,11 +132,14 @@ export const Home: React.FC = () => {
           Create Your First Assessment
         </Link>
       </div>
+      </div>
     );
   }
 
   return (
     <div className="space-y-8">
+      <UsageBanner />
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
         <div>

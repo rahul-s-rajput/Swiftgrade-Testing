@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Assessment, AssessmentResults, ReasoningConfig, ModelPair } from '../types';
+import { prepareImageForUpload, sha256Hex } from '../utils/imageUpload';
 import {
   createSession,
   getSignedUrl,
@@ -378,6 +379,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                     output_tokens: item.token_usage.output_tokens,
                     reasoning_tokens: item.token_usage.reasoning_tokens,
                     total_tokens: item.token_usage.total_tokens,
+                    cost_estimate: item.token_usage.cost_estimate,
                   };
                 }
               }
@@ -545,13 +547,27 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       try {
         // Upload and register images
         const uploadAndRegister = async (files: File[], role: 'student' | 'answer_key' | 'grading_rubric') => {
-          for (let i = 0; i < files.length; i++) {
-            const f = files[i];
-            const signed = await getSignedUrl(f.name, f.type || 'application/octet-stream');
-            await uploadToSignedUrl(signed.uploadUrl, signed.headers || {}, f, f.type || 'application/octet-stream');
+          const seen = new Set<string>();
+          let orderIndex = 0;
+          for (const original of files) {
+            const f = await prepareImageForUpload(original);
+            const contentType = f.type || 'application/octet-stream';
+            const contentHash = await sha256Hex(f);
+            // The same page added twice would map to the same URL, which a session can
+            // only register once per role.
+            if (seen.has(contentHash)) {
+              console.warn(`[AssessmentContext] Skipping duplicate ${role} image:`, original.name);
+              continue;
+            }
+            seen.add(contentHash);
+
+            const signed = await getSignedUrl(f.name, contentType, { contentHash, role });
+            if (!signed.exists) {
+              await uploadToSignedUrl(signed.uploadUrl, signed.headers || {}, f, contentType);
+            }
             const url = signed.publicUrl || '';
             if (!url) throw new Error('No publicUrl returned for uploaded file. Ensure storage bucket is public or backend returns a read URL.');
-            await registerImage(sessionId, role, url, i);
+            await registerImage(sessionId, role, url, orderIndex++);
           }
         };
 
@@ -790,6 +806,7 @@ export const AssessmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                     output_tokens: item.token_usage.output_tokens,
                     reasoning_tokens: item.token_usage.reasoning_tokens,
                     total_tokens: item.token_usage.total_tokens,
+                    cost_estimate: item.token_usage.cost_estimate,
                   };
                 }
               }
